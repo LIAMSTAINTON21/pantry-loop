@@ -49,19 +49,20 @@ export async function renderScan(context) {
   }
   controls.append(button("Enable / retry camera", "secondary", startCamera));
 
-  const manualForm = el("form", { class: "card stack" });
+  const manualForm = el("form", { class: "stack manual-form" });
   const code = el("input", { inputmode: "numeric", autocomplete: "off", placeholder: "e.g. 5000112548167", required: "" });
   const format = el("select");
   [["ean_13", "EAN-13"], ["ean_8", "EAN-8"], ["upc_a", "UPC-A"], ["upc_e", "UPC-E"], ["code_128", "Code 128"]].forEach(([value, label]) => format.append(el("option", { value, text: label })));
   const qty = el("input", { type: "number", min: "1", step: "1", value: "1", inputmode: "numeric" });
   const submitManual = button(settings.lastMode === "buy" ? "Add purchase" : "Mark finished", "primary"); submitManual.type = "submit";
-  manualForm.append(el("h2", { text: "Enter a barcode" }), field("Code", code), field("Format", format), field("Pack quantity", qty), submitManual);
+  manualForm.append(field("Code", code), field("Format", format), field("Pack quantity", qty), submitManual);
   manualForm.addEventListener("submit", async event => {
     event.preventDefault();
     try { const canonical = normalizeBarcode(code.value, format.value); await acceptCode({ code: canonical, format: format.value, qty: Number(qty.value), source: "manual" }); code.value = ""; }
     catch (error) { toast(error.message, { error: true }); }
   });
-  root.append(manualForm);
+  const manualEntry = el("details", { class: "card manual-entry" }, [el("summary", { text: "Can’t scan it? Enter the barcode" }), manualForm]);
+  root.append(manualEntry);
 
   const session = el("div", { class: "stack" });
   const renderSession = () => {

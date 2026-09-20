@@ -1,7 +1,7 @@
-const CACHE = "pantry-loop-v1.0.4-r1";
+const CACHE = "pantry-loop-v1.1.0";
 const ASSETS = [
   "./", "./index.html", "./app.css", "./manifest.webmanifest",
-  "./src/main.js", "./src/ui.js", "./src/db.js", "./src/barcode.js", "./src/inventory.js", "./src/scanner.js", "./src/lookup.js", "./src/list.js", "./src/export.js",
+  "./src/main.js", "./src/ui.js", "./src/confirmation.js", "./src/db.js", "./src/barcode.js", "./src/inventory.js", "./src/scanner.js", "./src/lookup.js", "./src/list.js", "./src/export.js",
   "./src/views/scan.js", "./src/views/list.js", "./src/views/catalogue.js", "./src/views/settings.js",
   "./vendor/idb-8.0.3.umd.js", "./vendor/zxing-wasm-reader-3.1.4.js", "./vendor/zxing_reader-3.1.4.wasm", "./vendor/xlsx-0.20.3.full.min.js",
   "./icons/icon-192.png", "./icons/icon-512.png", "./icons/icon-maskable-512.png"

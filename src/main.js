@@ -1,4 +1,5 @@
-import { getMeta, getSettings, localDate, openDatabase, recordEvent, setMeta, updateSettings, voidEvent } from "./db.js";
+import { getMeta, getSettings, localDate, openDatabase, recordEvent, saveProduct, setMeta, updateSettings, voidEvent } from "./db.js";
+import { showScanConfirmation } from "./confirmation.js";
 import { processLookupQueue } from "./lookup.js";
 import { renderScan } from "./views/scan.js";
 import { renderList } from "./views/list.js";
@@ -18,6 +19,8 @@ let savingBlocked = false;
 let backupReminderShown = false;
 let waitingWorker = null;
 let reloadForUpdate = false;
+let confirmationOpen = false;
+let resumeScanAfterConfirmation = false;
 const sessionId = crypto.randomUUID();
 const sessionRows = new Map();
 
@@ -69,8 +72,18 @@ async function acceptCode(detection) {
     row.message = type === "purchase" ? `${result.product.onHandQty} estimated on hand` : (result.product.onHandQty > 0 ? `Finished one · ${result.product.onHandQty} left` : (result.product.neverSuggest ? "Suggestions off" : result.product.snoozeUntil && result.product.snoozeUntil > localDate(settings.timezone) ? "Snoozed" : "Ran out · added to list"));
     sessionRows.set(detection.code, row);
     navigator.vibrate?.(55);
-    toast(`${row.name} · ${row.message}`, { action: async () => { await voidEvent(type === "purchase" ? "purchases" : "depletions", result.event.id); row.qty -= qty; if (row.qty <= 0) sessionRows.delete(detection.code); await renderRoute(); } });
-    window.dispatchEvent(new Event("sessionchange"));
+    confirmationOpen = true;
+    try {
+      await showScanConfirmation({
+        name: row.name, message: row.message, mode: type,
+        onRename: async nextName => { await saveProduct(detection.code, { name: nextName, lookup: { ...result.product.lookup, state: "manual" } }, ["name"]); row.name = nextName; },
+        onRemove: async () => { await voidEvent(type === "purchase" ? "purchases" : "depletions", result.event.id); row.qty -= qty; row.ids = row.ids.filter(id => id !== result.event.id); if (row.qty <= 0) sessionRows.delete(detection.code); }
+      });
+    } finally {
+      confirmationOpen = false;
+      window.dispatchEvent(new Event("sessionchange"));
+      if (resumeScanAfterConfirmation && !document.hidden) { resumeScanAfterConfirmation = false; renderRoute(); }
+    }
     processLookupQueue();
   } catch (error) {
     savingBlocked = true;
@@ -121,7 +134,10 @@ async function checkBackupReminder() {
 }
 
 window.addEventListener("hashchange", renderRoute);
-document.addEventListener("visibilitychange", () => { if (document.hidden) cleanup?.(); else if (activeRoute === "scan") renderRoute(); });
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) { if (activeRoute === "scan") { cleanup?.(); if (confirmationOpen) resumeScanAfterConfirmation = true; } }
+  else if (activeRoute === "scan") { if (confirmationOpen) resumeScanAfterConfirmation = true; else renderRoute(); }
+});
 window.addEventListener("dbblocked", () => toast("Close other Pantry Loop tabs to finish the update", { error: true, duration: 0 }));
 
 await openDatabase();

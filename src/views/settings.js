@@ -38,6 +38,6 @@ export async function renderSettings(context) {
     }
     root.append(card);
   }
-  root.append(el("section", { class: "card stack" }, [el("h2", { text: "About" }), el("p", { class: "meta", text: `Pantry Loop 1.0.4 · ${state.products.length} products · Product names by Open Food Facts when enabled. No photos or shopping history are uploaded.` })]));
+  root.append(el("section", { class: "card stack" }, [el("h2", { text: "About" }), el("p", { class: "meta", text: `Pantry Loop 1.1.0 · ${state.products.length} products · Product names by Open Food Facts when enabled. No photos or shopping history are uploaded.` })]));
   return { root };
 }
