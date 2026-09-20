@@ -1,0 +1,9 @@
+{
+  "name": "pantry-loop",
+  "version": "1.0.4",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test"
+  }
+}
