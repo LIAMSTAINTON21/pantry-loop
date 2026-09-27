@@ -5,7 +5,7 @@ import { el, empty, sectionTitle, button, field } from "../ui.js";
 export async function renderScan(context) {
   const { settings, setMode, acceptCode, toast } = context;
   const root = el("div", { class: "stack" });
-  const intro = sectionTitle(settings.lastMode === "buy" ? "Bring groceries in." : "Mark a pack finished.", "Keep scanning without tapping between packs. Naming happens later.");
+  const intro = sectionTitle(settings.lastMode === "buy" ? "Bring groceries in." : "Mark a pack finished.", "Known barcodes fill themselves in. If one is missing, use a photo or type the details.");
   root.append(intro);
   const mode = el("div", { class: "mode-switch", role: "group", "aria-label": "Scanning mode" });
   for (const value of ["buy", "finished"]) {
@@ -48,6 +48,7 @@ export async function renderScan(context) {
     }
   }
   controls.append(button("Enable / retry camera", "secondary", startCamera));
+  controls.append(button("No barcode? Identify product", "primary", async () => { scanner?.stop(); await context.identifyWithoutBarcode(); if (!document.hidden) context.refresh(); }));
 
   const manualForm = el("form", { class: "stack manual-form" });
   const code = el("input", { inputmode: "numeric", autocomplete: "off", placeholder: "e.g. 5000112548167", required: "" });

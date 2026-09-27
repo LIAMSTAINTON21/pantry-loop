@@ -98,7 +98,7 @@ export async function exportExcel() {
   if (!globalThis.XLSX) throw new Error("Excel export library unavailable");
   const state = await getState(); const metaMap = new Map(state.meta.map(row => [row.key, row.value]));
   const workbook = globalThis.XLSX.utils.book_new();
-  const productCols = ["barcode", "barcodeFormat", "name", "brand", "size", "category", "userEditedFields", "lookup", "onHandQty", "status", "isStaple", "staplePeriodDays", "defaultQty", "snoozeUntil", "neverSuggest", "createdAt"];
+  const productCols = ["barcode", "barcodeFormat", "name", "brand", "size", "price", "currency", "imageUrl", "category", "userEditedFields", "lookup", "onHandQty", "status", "isStaple", "staplePeriodDays", "defaultQty", "snoozeUntil", "neverSuggest", "createdAt"];
   const purchaseCols = ["id", "seq", "barcode", "qty", "purchasedAt", "purchasedOn", "source", "sessionId", "listId", "voidedAt", "replacesId", "clearedSnoozeUntil"];
   const depletionCols = ["id", "seq", "barcode", "qty", "finishedAt", "sessionId", "voidedAt", "replacesId"];
   const draft = metaMap.get("shoppingDraft");

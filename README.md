@@ -1,8 +1,8 @@
 # Pantry Loop
 
 An offline-first personal grocery tracker. Scan purchases, scan finished packs,
-and keep a persistent weekly shopping list on one phone. There are no accounts,
-backend services, subscriptions, or runtime CDN dependencies.
+and keep a persistent weekly shopping list on one phone. The core app has no
+account and keeps shopping history on the device.
 
 ## Run locally
 
@@ -30,10 +30,23 @@ work.
 
 ## Data and privacy
 
-Shopping data stays in IndexedDB in the browser. If Online product names is on,
-only an eligible retail barcode is sent to the Open Food Facts v3 product API.
+Shopping data stays in IndexedDB in the browser. If Online product details is on,
+an eligible retail barcode is sent to the configured Tesco proxy, or to Open Food
+Facts when no proxy is configured. Photos are resized in the browser and uploaded
+only after the user deliberately chooses **Take photo** and a Vision proxy is
+configured. API secrets must stay on that proxy; never put them in this public app.
 Use Settings → Download JSON backup regularly; JSON is the authoritative restore
 format and Excel is a readable snapshot.
+
+## Tesco and Vision integrations
+
+Settings accepts two HTTPS server endpoints. The Tesco endpoint receives
+`{"barcode":"...","retailer":"tesco-gb"}` and returns either HTTP 404 or a
+product object containing `name`/`product_name`, `brand`, `price`, `currency`,
+`image_url`, `category`, and `quantity`/`size`. The Vision endpoint receives a
+compressed JPEG data URL plus a prompt and JSON schema, and returns those same
+normalized product fields. These endpoints are intentionally server-side hooks:
+Tesco/Pepesto and multimodal API keys must not be shipped to GitHub Pages.
 
 ## Physical acceptance checks still required
 

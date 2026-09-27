@@ -12,6 +12,8 @@ const defaultSettings = {
   categoryOrder: ["Fruit & veg", "Bakery", "Dairy", "Meat & fish", "Cupboard", "Frozen", "Household"],
   planningHorizonDays: 7,
   onlineLookup: true,
+  catalogueProxyUrl: "",
+  visionProxyUrl: "",
   lastMode: "buy",
   forceFallback: false
 };
@@ -73,7 +75,7 @@ export function newProduct(barcode, barcodeFormat, name = null) {
   return {
     barcode, barcodeFormat,
     name: name || `Unknown item · ${barcode.replace(/^code128:/, "")}`,
-    brand: null, size: null, category: null, userEditedFields: name ? ["name"] : [],
+    brand: null, size: null, price: null, currency: "GBP", imageUrl: null, category: null, userEditedFields: name ? ["name"] : [],
     lookup: { state: barcodeFormat === "manual" || barcode.startsWith("code128:") ? "manual" : "pending", source: null, checkedAt: null, nextRetryAt: null },
     onHandQty: null, status: "unknown", isStaple: false, staplePeriodDays: null,
     defaultQty: 1, snoozeUntil: null, neverSuggest: false, createdAt: new Date().toISOString()

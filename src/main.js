@@ -1,6 +1,7 @@
 import { getMeta, getSettings, localDate, openDatabase, recordEvent, saveProduct, setMeta, updateSettings, voidEvent } from "./db.js";
 import { showScanConfirmation } from "./confirmation.js";
-import { processLookupQueue } from "./lookup.js";
+import { showIdentificationFallback } from "./identification.js";
+import { identifyBarcode, processLookupQueue } from "./lookup.js";
 import { renderScan } from "./views/scan.js";
 import { renderList } from "./views/list.js";
 import { renderCatalogue } from "./views/catalogue.js";
@@ -64,7 +65,22 @@ async function acceptCode(detection) {
   const draft = await getMeta("shoppingDraft");
   const listId = type === "purchase" && draft?.scanningActive && !draft.completedAt ? draft.id : null;
   const actionId = crypto.randomUUID(); const qty = detection.qty ?? 1;
-  const write = () => recordEvent({ type, barcode: detection.code, barcodeFormat: detection.format, qty, source: detection.source ?? "scan", sessionId, listId, actionId });
+  let details = detection.details ?? null;
+  if (!details) {
+    const identified = await identifyBarcode(detection.code, settings);
+    details = identified.match;
+    if (!details) details = await showIdentificationFallback({ barcode: detection.code, settings, toast });
+    if (!details) return;
+  }
+  const write = async () => {
+    const saved = await recordEvent({ type, barcode: detection.code, barcodeFormat: detection.format, qty, source: detection.source ?? "scan", sessionId, listId, actionId, name: details.name });
+    const editable = ["name", "brand", "size", "price", "category"].filter(field => details[field] !== null && details[field] !== undefined && details[field] !== "");
+    const product = await saveProduct(detection.code, {
+      ...Object.fromEntries(["name", "brand", "size", "price", "currency", "imageUrl", "category"].map(field => [field, details[field] ?? saved.product[field] ?? null])),
+      lookup: { state: details.source === "Manual entry" || details.source === "Vision identification" ? "manual" : "resolved", source: details.source, checkedAt: new Date().toISOString(), nextRetryAt: null }
+    }, details.source === "Manual entry" ? editable : []);
+    return { ...saved, product };
+  };
   try {
     const result = await write();
     const row = sessionRows.get(detection.code) ?? { name: result.product.name, qty: 0, ids: [], type };
@@ -84,12 +100,19 @@ async function acceptCode(detection) {
       window.dispatchEvent(new Event("sessionchange"));
       if (resumeScanAfterConfirmation && !document.hidden) { resumeScanAfterConfirmation = false; renderRoute(); }
     }
-    processLookupQueue();
   } catch (error) {
     savingBlocked = true;
     toast("Not saved · retry", { error: true, actionLabel: "Retry", duration: 0, action: async () => { try { await write(); savingBlocked = false; toast("Saved on retry"); await renderRoute(); } catch { toast("Still not saved · retry", { error: true, duration: 0, actionLabel: "Retry", action: async () => { savingBlocked = false; await acceptCode(detection); } }); } } });
     throw error;
   }
+}
+
+async function identifyWithoutBarcode() {
+  if (savingBlocked) return;
+  const settings = await getSettings();
+  const details = await showIdentificationFallback({ settings, toast });
+  if (!details) return;
+  await acceptCode({ code: `manual:${crypto.randomUUID()}`, format: "manual", qty: 1, source: "manual", details });
 }
 
 async function renderRoute() {
@@ -100,7 +123,7 @@ async function renderRoute() {
   const settings = await getSettings();
   const activeDraft = await getMeta("shoppingDraft");
   const context = {
-    settings, activeDraft, toast, acceptCode,
+    settings, activeDraft, toast, acceptCode, identifyWithoutBarcode,
     setMode: async mode => { await updateSettings({ lastMode: mode }); await setMeta("activeSession", { id: sessionId, startedAt: (await getMeta("activeSession"))?.startedAt ?? new Date().toISOString(), mode }); settings.lastMode = mode; },
     sessionEvents: () => [...sessionRows.values()],
     today: (timezone, date) => localDate(timezone, date),
