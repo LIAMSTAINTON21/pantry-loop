@@ -48,6 +48,6 @@ export async function renderSettings(context) {
     }
     root.append(card);
   }
-  root.append(el("section", { class: "card stack" }, [el("h2", { text: "About" }), el("p", { class: "meta", text: `Pantry Loop 1.2.1 · ${state.products.length} products · Barcode details use your Tesco proxy or Open Food Facts. Product photos are uploaded only when you deliberately take one and a Vision proxy is configured.` })]));
+  root.append(el("section", { class: "card stack" }, [el("h2", { text: "About" }), el("p", { class: "meta", text: `Pantry Loop 1.2.2 · ${state.products.length} products · Barcode details use your Tesco proxy or Open Food Facts. Product photos are uploaded only when you deliberately take one and a Vision proxy is configured.` })]));
   return { root };
 }

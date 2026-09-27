@@ -66,11 +66,15 @@ async function acceptCode(detection) {
   const listId = type === "purchase" && draft?.scanningActive && !draft.completedAt ? draft.id : null;
   const actionId = crypto.randomUUID(); const qty = detection.qty ?? 1;
   let details = detection.details ?? null;
+  let scannerPausedForFallback = false;
   if (!details) {
     const identified = await identifyBarcode(detection.code, settings);
     details = identified.match;
-    if (!details) details = await showIdentificationFallback({ barcode: detection.code, settings, toast });
-    if (!details) return;
+    if (!details) {
+      if (activeRoute === "scan" && cleanup) { cleanup(); cleanup = null; scannerPausedForFallback = true; }
+      details = await showIdentificationFallback({ barcode: detection.code, barcodeFormat: detection.format, settings, toast });
+    }
+    if (!details) { if (scannerPausedForFallback && !document.hidden) await renderRoute(); return; }
   }
   const write = async () => {
     const saved = await recordEvent({ type, barcode: detection.code, barcodeFormat: detection.format, qty, source: detection.source ?? "scan", sessionId, listId, actionId, name: details.name });
@@ -98,7 +102,7 @@ async function acceptCode(detection) {
     } finally {
       confirmationOpen = false;
       window.dispatchEvent(new Event("sessionchange"));
-      if (resumeScanAfterConfirmation && !document.hidden) { resumeScanAfterConfirmation = false; renderRoute(); }
+      if ((resumeScanAfterConfirmation || scannerPausedForFallback) && !document.hidden) { resumeScanAfterConfirmation = false; renderRoute(); }
     }
   } catch (error) {
     savingBlocked = true;
@@ -112,7 +116,7 @@ async function identifyWithoutBarcode() {
   const settings = await getSettings();
   const details = await showIdentificationFallback({ settings, toast });
   if (!details) return;
-  await acceptCode({ code: `manual:${crypto.randomUUID()}`, format: "manual", qty: 1, source: "manual", details });
+  await acceptCode({ code: details.barcode ?? `manual:${crypto.randomUUID()}`, format: details.barcodeFormat ?? "manual", qty: 1, source: "manual", details });
 }
 
 async function renderRoute() {

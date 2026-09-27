@@ -1,4 +1,4 @@
-const CACHE = "pantry-loop-v1.2.1";
+const CACHE = "pantry-loop-v1.2.2";
 const ASSETS = [
   "./", "./index.html", "./app.css", "./manifest.webmanifest",
   "./src/main.js", "./src/ui.js", "./src/confirmation.js", "./src/identification.js", "./src/db.js", "./src/barcode.js", "./src/inventory.js", "./src/scanner.js", "./src/lookup.js", "./src/list.js", "./src/export.js",
