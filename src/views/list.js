@@ -25,27 +25,27 @@ export async function renderList(context) {
 
   const renderSection = (title, items) => {
     if (!items.length) return;
-    root.append(el("h2", { text: title }));
-    let currentCategory = null;
+    root.append(el("h2", { class: "list-section" }, [title, el("span", { class: "list-count", text: `${items.length} item${items.length === 1 ? "" : "s"}` })]));
+    let currentCategory = null; let group = null;
     for (const item of items) {
       const categoryLabel = item.category || "Uncategorised";
-      if (categoryLabel !== currentCategory) { currentCategory = categoryLabel; root.append(el("h3", { class: "muted", text: categoryLabel })); }
+      if (categoryLabel !== currentCategory) { currentCategory = categoryLabel; group = el("div", { class: "aisle-group" }, [el("h3", { class: "aisle-label", text: categoryLabel })]); root.append(group); }
       const checkbox = el("input", { type: "checkbox", "aria-label": `Mark ${item.name} checked` }); checkbox.checked = item.checked;
       const quantity = el("output", { text: String(item.qty), "aria-label": `${item.qty} packs` });
       const save = async () => { draft.updatedAt = new Date().toISOString(); return setMeta("shoppingDraft", draft); };
       checkbox.addEventListener("change", () => { item.checked = checkbox.checked; save(); });
       const minus = button("−", "secondary", () => { item.qty = Math.max(1, item.qty - 1); quantity.textContent = String(item.qty); save(); }); minus.setAttribute("aria-label", `Reduce ${item.name} quantity`);
       const plus = button("+", "secondary", () => { item.qty += 1; quantity.textContent = String(item.qty); save(); }); plus.setAttribute("aria-label", `Increase ${item.name} quantity`);
-      const snooze = button("Snooze", "ghost", async () => {
+      const snooze = button("Snooze", "ghost snooze", async () => {
         const weeks = Number(prompt("Snooze for 1, 2, or 4 weeks", "1")); if (![1, 2, 4].includes(weeks)) return;
         const until = new Date(); until.setDate(until.getDate() + weeks * 7);
         await saveProduct(item.barcode, { snoozeUntil: context.today(settings.timezone, until) }); context.toast(`Snoozed ${item.name} for ${weeks} week${weeks > 1 ? "s" : ""}`); context.refresh();
       });
-      root.append(el("article", { class: "list-item" }, [
-        el("div", { class: "row" }, [checkbox, el("div", {}, [el("p", { class: "item-title", text: item.name }), el("p", { class: "meta", text: [item.size, item.category].filter(Boolean).join(" · ") || "Uncategorised" })])]),
-        el("p", { class: "meta", text: item.reasons.map(reason => reason.label).join(" · ") }),
-        item.reasons.find(reason => reason.note) && el("p", { class: "badge warn", text: item.reasons.find(reason => reason.note).note }),
-        el("div", { class: "row spread wrap" }, [el("div", { class: "quantity" }, [minus, quantity, plus]), snooze])
+      const note = item.reasons.find(reason => reason.note)?.note;
+      group.append(el("article", { class: "list-item" }, [
+        checkbox,
+        el("div", { class: "list-main" }, [el("p", { class: "item-title", text: item.name }), el("p", { class: "meta", text: [item.size, ...item.reasons.map(reason => reason.label)].filter(Boolean).join(" · ") }), note && el("p", { class: "badge warn", text: note })]),
+        el("div", { class: "list-controls" }, [el("div", { class: "quantity" }, [minus, quantity, plus]), snooze])
       ]));
     }
   };
