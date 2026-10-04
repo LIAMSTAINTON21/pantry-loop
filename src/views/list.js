@@ -53,7 +53,7 @@ export async function renderList(context) {
         await saveProduct(item.barcode, { snoozeUntil: context.today(settings.timezone, until) }); context.toast(`Snoozed ${item.name} for ${weeks} week${weeks > 1 ? "s" : ""}`); context.refresh();
       };
       const note = item.reasons.find(reason => reason.note)?.note;
-      const main = el("button", { type: "button", class: "list-main", "aria-label": `${item.name}. More options` }, [el("span", { class: "item-title", text: item.name }), el("span", { class: "meta", text: [item.size, ...item.reasons.map(reason => reason.label)].filter(Boolean).join(" · ") }), note && el("span", { class: "badge warn", text: note })]);
+      const main = el("button", { type: "button", class: "list-main", "aria-haspopup": "dialog" }, [el("span", { class: "item-title", text: item.name }), el("span", { class: "meta", text: [item.size, ...item.reasons.map(reason => reason.label)].filter(Boolean).join(" · ") }), note && el("span", { class: "badge warn", text: note })]);
       main.addEventListener("click", () => showItemSheet(item, { onSnooze: snooze }));
       group.append(el("article", { class: "list-item" }, [checkbox, main, el("div", { class: "quantity" }, [minus, quantity, plus])]));
     }
@@ -149,7 +149,8 @@ export async function renderList(context) {
   const scanBags = button("Scan the bags", "primary", async () => { draft.scanningActive = true; draft.completionMode = "scan"; draft.updatedAt = new Date().toISOString(); await setMeta("shoppingDraft", draft); location.hash = "#scan"; });
   function updateShopBar() {
     const ticked = draft.items.filter(item => item.checked).length;
-    logChecked.textContent = ticked ? `Log ${ticked} ticked` : "Log ticked"; logChecked.disabled = !ticked;
+    // With nothing ticked this still closes the shop, as logCheckedDraft always has.
+    logChecked.textContent = ticked ? `Log ${ticked} ticked` : "Finish shop";
   }
   root.append(el("div", { class: "shop-bar", role: "region", "aria-label": "Done shopping" }, [el("span", { class: "shop-bar-label", text: "Done shopping?" }), logChecked, scanBags]), el("div", { class: "shop-bar-spacer", "aria-hidden": "true" }));
   updateShopBar();

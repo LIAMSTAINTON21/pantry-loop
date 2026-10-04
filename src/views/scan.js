@@ -9,7 +9,7 @@ const MODE_COPY = {
   finished: { label: "Used up", hint: "Scan a pack you’ve finished", submit: "Mark used up" }
 };
 
-function showManualEntry(mode, { onSubmit, onClose }) {
+function showManualEntry(mode, { onSubmit, onClose, onOpen }) {
   const error = el("p", { class: "confirm-error", role: "alert" });
   const code = el("input", { inputmode: "numeric", autocomplete: "off", enterkeyhint: "done", placeholder: "e.g. 5000112548167", required: "", "aria-describedby": "manual-error" });
   error.id = "manual-error";
@@ -19,6 +19,7 @@ function showManualEntry(mode, { onSubmit, onClose }) {
   const submit = el("button", { type: "submit", class: "primary", text: MODE_COPY[mode].submit });
   const form = el("form", { class: "stack" }, [field("Barcode number", code), field("Barcode type", format), qty.node, error, submit, button("Cancel", "ghost", () => sheet.close())]);
   const sheet = openSheet({ title: "Type a barcode", subtitle: "Use the numbers printed under the bars.", content: [form], onClose });
+  onOpen?.(() => sheet.close({ force: true }));
   form.addEventListener("submit", event => {
     event.preventDefault();
     sheet.run(() => onSubmit({ code: code.value, format: format.value, qty: qty.value }), { error });
@@ -45,7 +46,8 @@ function showSessionEditor(item, { onSave, onRemove, onOpen }) {
 export async function renderScan(context) {
   const { settings, setMode, acceptCode, toast } = context;
   const root = el("div", { class: "stack scan-view" });
-  let mode = settings.lastMode === "finished" ? "finished" : "buy";
+  // Same mapping as acceptCode in main.js: anything other than "buy" records a finished pack.
+  let mode = settings.lastMode === "buy" ? "buy" : "finished";
   root.append(el("h1", { class: "sr-only", text: "Scan groceries" }));
 
   // Mode toggle sits directly above the camera so the camera is the first thing on screen.
@@ -84,7 +86,7 @@ export async function renderScan(context) {
   syncMode();
 
   let scanner;
-  let closeEditor = null;
+  let closeEditor = null; let closeManual = null;
   // Only decode while most of the camera is actually on screen, clear of the sticky header and floating nav.
   let cameraVisible = true;
   const visibility = new IntersectionObserver(entries => {
@@ -97,9 +99,13 @@ export async function renderScan(context) {
   }, { rootMargin: "-64px 0px -90px 0px", threshold: Array.from({ length: 21 }, (_, index) => index / 20) });
   visibility.observe(camera);
   camera.append(el("p", { class: "camera-paused", text: "Scanner paused · scroll up to scan", "aria-hidden": "true" }));
+  let cameraAttempt = null;
   async function startCamera() {
     message.hidden = false; message.replaceChildren(el("p", { text: "Opening the camera…" }));
     camera.classList.remove("is-ready");
+    // If the permission prompt is dismissed without an answer, start() may never settle; offer a retry.
+    const attempt = Symbol("camera"); cameraAttempt = attempt;
+    setTimeout(() => { if (cameraAttempt === attempt && !camera.classList.contains("is-ready") && !message.querySelector("button")) message.append(button("Try again", "secondary", startCamera)); }, 6000);
     try {
       scanner?.stop();
       scanner = new CameraScanner(video, async detection => acceptCode(detection), (state, error) => {
@@ -121,7 +127,8 @@ export async function renderScan(context) {
   const pauseFor = async (reason, task) => { scanner?.setPaused(reason, true); try { await task(); } finally { scanner?.setPaused(reason, false); } };
   const typeBarcode = el("button", { type: "button", class: "scan-action" }, [icon("keyboard", { size: 20 }), el("span", { text: "Type barcode" })]);
   typeBarcode.addEventListener("click", () => pauseFor("manual", () => new Promise(resolve => showManualEntry(mode, {
-    onClose: resolve,
+    onClose: () => { closeManual = null; resolve(); },
+    onOpen: close => { closeManual = close; },
     onSubmit: async ({ code, format, qty }) => {
       const canonical = normalizeBarcode(code, format);
       setTimeout(() => acceptCode({ code: canonical, format, qty, source: "manual" }).catch(error => toast(error.message, { error: true })), 200);
@@ -156,5 +163,5 @@ export async function renderScan(context) {
   root.append(session);
 
   startCamera();
-  return { root, cleanup: () => { closeEditor?.(); scanner?.stop(); visibility.disconnect(); window.removeEventListener("sessionchange", renderSession); } };
+  return { root, cleanup: () => { closeEditor?.(); closeManual?.(); scanner?.stop(); visibility.disconnect(); window.removeEventListener("sessionchange", renderSession); } };
 }

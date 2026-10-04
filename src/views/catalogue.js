@@ -4,6 +4,9 @@ import { el, empty, sectionTitle, button, field } from "../ui.js";
 import { openSheet, stepper } from "../sheet.js";
 import { icon } from "../icons.js";
 
+// Kept outside the view so saving a product (which re-renders) does not lose the search or filter.
+const view = { query: "", filter: "all" };
+
 const needsName = product => product.lookup?.state === "pending" || product.name.startsWith("Unknown item");
 
 function stockLabel(product) {
@@ -42,7 +45,7 @@ function showEditProduct(product, context) {
   const name = el("input", { value: product.name, required: "", maxlength: "140", autocomplete: "off" });
   const brand = el("input", { value: product.brand ?? "", placeholder: "Optional", autocomplete: "off" });
   const size = el("input", { value: product.size ?? "", placeholder: "e.g. 500 g" });
-  const price = el("input", { value: product.price ?? "", type: "number", min: "0", step: "0.01", inputmode: "decimal", placeholder: "Optional" });
+  const price = el("input", { value: product.price ?? "", type: "number", min: "0", step: "any", inputmode: "decimal", placeholder: "Optional" });
   const category = el("input", { value: product.category ?? "", placeholder: "e.g. Dairy" });
   const staple = toggle("Scheduled staple", product.isStaple, "Suggest it on a regular cycle");
   const period = el("input", { type: "number", min: "1", step: "1", inputmode: "numeric", value: product.staplePeriodDays ?? 7 });
@@ -95,14 +98,17 @@ export async function renderCatalogue(context) {
   add.addEventListener("click", () => showAddProduct(context));
   root.append(el("div", { class: "search-row" }, [el("label", { class: "search-field" }, [icon("search", { size: 18 }), query]), add]));
 
+  query.value = view.query;
   const filters = [["all", "All"], ["staples", "Staples"], ["names", "Needs a name"]];
-  let filter = "all";
+  const counts = { all: products.length, staples: products.filter(p => p.isStaple).length, names: products.filter(needsName).length };
+  if (!counts[view.filter]) view.filter = "all";
+  let filter = view.filter;
   const chips = el("div", { class: "chip-row", role: "group", "aria-label": "Filter products" });
   for (const [value, label] of filters) {
     const count = value === "staples" ? products.filter(p => p.isStaple).length : value === "names" ? products.filter(needsName).length : products.length;
     if (value !== "all" && !count) continue;
     const chip = el("button", { type: "button", class: "chip", "aria-pressed": String(value === filter) }, [label, el("span", { class: "chip-count", text: String(count) })]);
-    chip.addEventListener("click", () => { filter = value; chips.querySelectorAll(".chip").forEach(c => c.setAttribute("aria-pressed", String(c === chip))); renderRows(); });
+    chip.addEventListener("click", () => { filter = value; view.filter = value; chips.querySelectorAll(".chip").forEach(c => c.setAttribute("aria-pressed", String(c === chip))); renderRows(); });
     chips.append(chip);
   }
   if (chips.children.length > 1) root.append(chips);
@@ -128,7 +134,7 @@ export async function renderCatalogue(context) {
     }));
     if (!visible.length) list.append(empty(term ? `Nothing matches “${query.value.trim()}”` : "Nothing here", term ? "Check the spelling, or tap + to add it." : ""));
   }
-  query.addEventListener("input", renderRows);
+  query.addEventListener("input", () => { view.query = query.value; renderRows(); });
   renderRows();
   return { root };
 }
