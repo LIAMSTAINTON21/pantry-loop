@@ -183,6 +183,11 @@ input[type="checkbox"] { width: 24px; min-height: 24px; accent-color: var(--acce
 .sheet-danger { display: grid; gap: 10px; margin-top: 6px; padding: 14px; border-radius: 16px; background: color-mix(in srgb, var(--danger) 8%, var(--surface)); }
 .sheet-question { margin: 0; color: var(--danger); font-weight: 700; }
 .sheet-remove { min-height: 48px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; border-radius: 12px; background: #4a241f; color: #ffe3de; border: 1px solid #7a3b32; font-weight: 700; }
+.update-dialog { width: 100vw; max-width: none; height: 100dvh; max-height: none; margin: 0; padding: 0; border: 0; background: var(--bg); color: var(--text); }
+.update-dialog::backdrop { background: var(--bg); }
+.update-panel { min-height: 100%; width: min(520px, 100%); margin: 0 auto; padding: max(36px, env(safe-area-inset-top)) 22px max(30px, env(safe-area-inset-bottom)); display: flex; flex-direction: column; justify-content: center; text-align: center; }
+.update-panel h1 { margin: 0 auto; font-size: clamp(2rem, 9vw, 3rem); text-wrap: balance; }
+.update-panel .primary { width: min(360px, 100%); margin: 0 auto; min-height: 56px; font-size: 1.05rem; }
 @keyframes confirm-pop { 0% { opacity: 0; transform: scale(.35) rotate(-16deg); } 65% { transform: scale(1.12) rotate(3deg); } 100% { opacity: 1; transform: scale(1) rotate(0); } }
 @keyframes confirm-turn { from { opacity: 0; transform: rotate(-14deg) scale(.7); } to { opacity: 1; transform: rotate(0) scale(1); } }
 .loading-card { min-height: 50vh; display: grid; place-items: center; align-content: center; gap: 14px; color: var(--muted); }

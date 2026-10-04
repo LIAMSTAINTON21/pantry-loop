@@ -1,4 +1,4 @@
-const CACHE = "pantry-loop-v1.3.0-supabase-5";
+const CACHE = "pantry-loop-v1.4.0-supabase-6";
 const ASSETS = [
   "./src/bootstrap.js?release=cloud-3",
   "./", "./index.html", "./app.css", "./manifest.webmanifest",
@@ -9,7 +9,8 @@ const ASSETS = [
 ];
 
 self.addEventListener("install", event => {
-  event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(ASSETS)));
+  // Bypass the HTTP cache so a new release never installs stale copies of its own files.
+  event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(ASSETS.map(asset => new Request(asset, { cache: "reload" })))));
 });
 
 self.addEventListener("activate", event => {
