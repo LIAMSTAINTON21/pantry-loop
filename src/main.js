@@ -7,6 +7,7 @@ import { showIdentificationFallback } from "./identification.js";
 import { identifyBarcode, processLookupQueue } from "./lookup.js";
 import { renderScan } from "./views/scan.js";
 import { renderList } from "./views/list.js";
+import { renderStock } from "./views/stock.js";
 import { renderCatalogue } from "./views/catalogue.js";
 import { renderSettings } from "./views/settings.js";
 
@@ -16,8 +17,8 @@ const toastRegion = document.querySelector("#toast-region");
 const networkStatus = document.querySelector("#network-status");
 const offlineStatus = document.querySelector("#offline-status");
 const syncStatus = document.querySelector("#sync-status");
-const views = { scan: renderScan, list: renderList, catalogue: renderCatalogue, settings: renderSettings };
-const labels = { scan: "Scan", list: "Shopping list", catalogue: "Catalogue", settings: "Settings" };
+const views = { scan: renderScan, stock: renderStock, list: renderList, catalogue: renderCatalogue, settings: renderSettings };
+const labels = { scan: "Scan", stock: "In stock", list: "Shopping list", catalogue: "Catalogue", settings: "Settings" };
 let cleanup = null;
 let activeRoute = null;
 let savingBlocked = false;
@@ -190,7 +191,7 @@ async function renderRoute() {
   if (!appAuthenticated) return;
   cleanup?.(); cleanup = null;
   const route = location.hash.slice(1) || "scan"; activeRoute = views[route] ? route : "scan";
-  document.querySelectorAll(".bottom-nav a").forEach(link => link.toggleAttribute("aria-current", link.dataset.route === activeRoute));
+  document.querySelectorAll(".bottom-nav a").forEach(link => { if (link.dataset.route === activeRoute) link.setAttribute("aria-current", "page"); else link.removeAttribute("aria-current"); });
   title.textContent = labels[activeRoute];
   const settings = await getSettings();
   const activeDraft = await getMeta("shoppingDraft");
