@@ -60,7 +60,9 @@ function updateStatusSummary() {
     : sync === "Syncing…" ? ["busy", "Syncing"]
     : sync === "Sync unavailable" ? ["warn", "Sync issue"]
     : sync === "Cloud synced" ? ["ok", "Synced"] : ["busy", "Starting"];
-  statusSummary.dataset.state = state; document.querySelector("#status-label").textContent = label;
+  statusSummary.dataset.state = state;
+  const labelNode = document.querySelector("#status-label");
+  if (labelNode.textContent !== label) labelNode.textContent = label; // live region: only announce real changes
   statusSummary.setAttribute("aria-label", `Status: ${label}. Show details`);
 }
 new MutationObserver(updateStatusSummary).observe(statusPanel, { subtree: true, characterData: true, childList: true });

@@ -6,6 +6,7 @@ import { icon } from "../icons.js";
 
 // Kept outside the view so saving a product (which re-renders) does not lose the search or filter.
 const view = { query: "", filter: "all" };
+addEventListener("hashchange", () => { if (location.hash !== "#catalogue") { view.query = ""; view.filter = "all"; } });
 
 const needsName = product => product.lookup?.state === "pending" || product.name.startsWith("Unknown item");
 

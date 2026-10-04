@@ -115,6 +115,7 @@ export async function renderScan(context) {
       scanner.setPaused("offscreen", !cameraVisible);
       await scanner.start({ forceFallback: settings.forceFallback });
     } catch (error) {
+      if (cameraAttempt !== attempt) return; // a newer attempt owns the camera now
       message.hidden = false;
       message.replaceChildren(el("div", { class: "camera-error" }, [
         icon("camera", { size: 28 }),

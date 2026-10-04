@@ -145,7 +145,9 @@ export async function renderList(context) {
   root.append(tesco);
 
   // "Done shopping" stays reachable above the nav instead of sitting at the bottom of the page.
-  const logChecked = button("Log ticked", "secondary", async () => { const result = await logCheckedDraft(draft); context.toast(result.alreadyCompleted ? "This shop is already recorded" : `Recorded ${result.count} pack${result.count === 1 ? "" : "s"}`); context.refresh(); });
+  const logChecked = button("Log ticked", "secondary", async () => {
+    if (!draft.items.some(item => item.checked) && !await confirmSheet({ title: "Finish this shop?", message: "Nothing is ticked, so no purchases will be recorded. The list starts fresh next time.", confirmLabel: "Finish shop" })) return;
+    const result = await logCheckedDraft(draft); context.toast(result.alreadyCompleted ? "This shop is already recorded" : `Recorded ${result.count} pack${result.count === 1 ? "" : "s"}`); context.refresh(); });
   const scanBags = button("Scan the bags", "primary", async () => { draft.scanningActive = true; draft.completionMode = "scan"; draft.updatedAt = new Date().toISOString(); await setMeta("shoppingDraft", draft); location.hash = "#scan"; });
   function updateShopBar() {
     const ticked = draft.items.filter(item => item.checked).length;
