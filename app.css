@@ -183,6 +183,17 @@ body:has(.shop-bar) .toast-region { bottom: 160px; }
 .activity-row.is-undone { grid-template-columns: minmax(0, 1fr) auto; opacity: .55; }
 @media (max-width: 420px) { .shop-bar-label { display: none; } .shop-bar { grid-template-columns: 1fr 1fr; padding-left: 8px; } }
 .sheet-panel .confirm-error:empty { display: none; }
+/* Keep compact visuals but give every small control a 44px touch target. */
+.list-item .quantity button, .stock-item .quantity button, .chip, .status-summary { position: relative; }
+.list-item .quantity button::after, .stock-item .quantity button::after, .chip::after, .status-summary::after { content: ""; position: absolute; inset: -4px; }
+.status-summary { min-height: 40px; }
+/* Short landscape screens: fixed bars would leave too little list visible, so dock the shop bar inline and let the header scroll away. */
+@media (max-height: 520px) {
+  .topbar { position: static; }
+  .shop-bar { position: static; transform: none; width: auto; margin-top: var(--space-2); box-shadow: none; }
+  .shop-bar-spacer { display: none; }
+  body:has(.shop-bar) .toast-region { bottom: 96px; }
+}
 .sheet-panel { max-height: 88dvh; overflow-y: auto; overscroll-behavior: contain; }
 .badge.warn { color: var(--warn); background: color-mix(in srgb, var(--warn) 12%, transparent); }
 .quantity { display: grid; grid-template-columns: 48px 58px 48px; align-items: center; }
@@ -286,4 +297,4 @@ body:has(.shop-bar) .toast-region { bottom: 160px; }
 @keyframes spin { to { transform: rotate(360deg); } }
 @media (min-width: 700px) { main { padding-top: 28px; } }
 @media (max-width: 520px) { .identify-options, .identify-grid, .identify-barcode-row { grid-template-columns: 1fr; } .identify-choice { min-height: 118px; } .identify-barcode-row button { width: 100%; } }
-@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; scroll-behavior: auto !important; } }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; scroll-behavior: auto !important; } }
