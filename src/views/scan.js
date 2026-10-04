@@ -1,42 +1,21 @@
 import { normalizeBarcode } from "../barcode.js";
 import { CameraScanner } from "../scanner.js";
 import { el, empty, sectionTitle, button, field, onLongPress } from "../ui.js";
+import { openSheet, stepper } from "../sheet.js";
 
 function showSessionEditor(item, { onSave, onRemove, onOpen }) {
   return new Promise(resolve => {
-    let qty = item.qty; let busy = false; let closed = false; const openedAt = performance.now();
-    const dialog = el("dialog", { class: "sheet-dialog", "aria-labelledby": "sheet-title" });
-    const close = ({ force = false } = {}) => {
-      if (closed || (busy && !force)) return; closed = true;
-      dialog.classList.remove("is-visible"); setTimeout(() => { dialog.close(); dialog.remove(); resolve(); }, 180);
-    };
-    onOpen?.(() => close({ force: true }));
     const error = el("p", { class: "confirm-error", role: "alert" });
-    const value = el("output", { class: "confirm-qty-value", text: String(qty), "aria-live": "polite" });
-    const minus = el("button", { type: "button", class: "confirm-qty-step", text: "−", "aria-label": `Reduce ${item.name} quantity` });
-    const plus = el("button", { type: "button", class: "confirm-qty-step", text: "+", "aria-label": `Increase ${item.name} quantity` });
-    const setQty = next => { qty = Math.max(1, next); value.textContent = String(qty); minus.disabled = qty === 1; save.disabled = qty === item.qty; };
-    const run = async (action, controls) => {
-      controls.forEach(control => { control.disabled = true; }); busy = true;
-      try { await action(); busy = false; close(); } catch (reason) { busy = false; error.textContent = reason.message || "That did not work"; controls.forEach(control => { control.disabled = false; }); setQty(qty); }
-    };
-    const save = button("Save quantity", "primary", () => run(() => onSave(qty), [save, remove]));
-    const remove = el("button", { type: "button", class: "sheet-remove", onclick: () => run(onRemove, [save, remove]) }, [el("span", { text: "✕", "aria-hidden": "true" }), el("span", { text: "Remove product" })]);
-    minus.addEventListener("click", () => setQty(qty - 1)); plus.addEventListener("click", () => setQty(qty + 1));
-    dialog.append(el("div", { class: "sheet-panel" }, [
-      el("div", { class: "sheet-grabber", "aria-hidden": "true" }),
-      el("h2", { id: "sheet-title", text: item.name }),
-      el("p", { class: "meta", text: item.message }),
-      el("div", { class: "confirm-qty", role: "group", "aria-label": "Quantity" }, [minus, el("div", { class: "confirm-qty-readout" }, [value, el("span", { class: "confirm-qty-label", text: item.type === "purchase" ? "packs bought" : "packs finished" })]), plus]),
-      save,
-      el("div", { class: "sheet-danger" }, [el("p", { class: "sheet-question", text: `Remove ${item.name} from this session?` }), remove]),
-      error,
-      button("Cancel", "ghost", () => close())
-    ]));
-    dialog.addEventListener("cancel", event => { event.preventDefault(); close(); });
-    // Ignore the lift of the finger that opened the sheet, which can land on the backdrop.
-    dialog.addEventListener("click", event => { if (event.target === dialog && performance.now() - openedAt > 400) close(); });
-    document.body.append(dialog); setQty(qty); dialog.showModal(); requestAnimationFrame(() => dialog.classList.add("is-visible"));
+    let save = null;
+    const qty = stepper({ value: item.qty, min: 1, label: `${item.name} quantity`, unit: item.type === "purchase" ? "packs bought" : "packs finished", onChange: value => { if (save) save.disabled = value === item.qty; } });
+    save = button("Save quantity", "primary", () => sheet.run(() => onSave(qty.value), { error }));
+    save.disabled = true;
+    const remove = el("button", { type: "button", class: "sheet-remove", onclick: () => sheet.run(onRemove, { error }) }, [el("span", { text: "✕", "aria-hidden": "true" }), el("span", { text: "Remove product" })]);
+    const sheet = openSheet({
+      title: item.name, subtitle: item.message, onClose: resolve,
+      content: [qty.node, save, el("div", { class: "sheet-danger" }, [el("p", { class: "sheet-question", text: `Remove ${item.name} from this session?` }), remove]), error, button("Cancel", "ghost", () => sheet.close())]
+    });
+    onOpen?.(() => sheet.close({ force: true }));
   });
 }
 
