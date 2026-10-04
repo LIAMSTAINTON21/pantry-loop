@@ -1,4 +1,4 @@
-import { getMeta, getSettings, localDate, openDatabase, recordEvent, saveProduct, setMeta, updateSettings, voidEvent } from "./db.js";
+import { correctEvent, getMeta, setEventsQuantity, getSettings, localDate, openDatabase, recordEvent, saveProduct, setMeta, updateSettings, voidEvent } from "./db.js";
 import { requireAuthentication } from "./auth.js";
 import { startSynchronization, synchronizeNow } from "./sync.js";
 import { showScanConfirmation } from "./confirmation.js";
@@ -28,6 +28,25 @@ let resumeScanAfterConfirmation = false;
 let appAuthenticated = false;
 const sessionId = crypto.randomUUID();
 const sessionRows = new Map();
+
+function sessionMessage(type, product, settings) {
+  if (type === "purchase") return `${product.onHandQty} estimated on hand`;
+  if (product.onHandQty > 0) return `Finished one · ${product.onHandQty} left`;
+  return product.neverSuggest ? "Suggestions off" : product.snoozeUntil && product.snoozeUntil > localDate(settings.timezone) ? "Snoozed" : "Ran out · added to list";
+}
+
+async function refreshSessionMessage(row) {
+  const product = await (await openDatabase()).get("products", row.code);
+  if (product) row.message = sessionMessage(row.type, product, await getSettings());
+}
+
+async function editSessionRow(key, nextQty) {
+  const row = sessionRows.get(key); if (!row) return;
+  const result = await setEventsQuantity(row.type === "purchase" ? "purchases" : "depletions", row.ids, Math.max(0, nextQty));
+  if (!result.ids.length) sessionRows.delete(key);
+  else { row.ids = result.ids; row.qty = result.qty; await refreshSessionMessage(row); }
+  window.dispatchEvent(new Event("sessionchange"));
+}
 
 function toast(message, { error = false, action = null, actionLabel = "Undo", duration = 10000 } = {}) {
   toastRegion.replaceChildren();
@@ -75,7 +94,7 @@ async function acceptCode(detection) {
     details = identified.match;
     if (!details) {
       if (activeRoute === "scan" && cleanup) { cleanup(); cleanup = null; scannerPausedForFallback = true; }
-      details = await showIdentificationFallback({ barcode: detection.code, barcodeFormat: detection.format, settings, toast });
+      details = await showIdentificationFallback({ barcode: detection.code, barcodeFormat: detection.format, settings, toast, autoAi: settings.onlineLookup && navigator.onLine });
     }
     if (!details) { if (scannerPausedForFallback && !document.hidden) await renderRoute(); return; }
   }
@@ -90,17 +109,25 @@ async function acceptCode(detection) {
   };
   try {
     const result = await write();
-    const row = sessionRows.get(detection.code) ?? { name: result.product.name, qty: 0, ids: [], type };
+    const key = `${type}:${detection.code}`;
+    const row = sessionRows.get(key) ?? { key, code: detection.code, name: result.product.name, qty: 0, ids: [], type };
     row.qty += qty; row.ids.push(result.event.id);
-    row.message = type === "purchase" ? `${result.product.onHandQty} estimated on hand` : (result.product.onHandQty > 0 ? `Finished one · ${result.product.onHandQty} left` : (result.product.neverSuggest ? "Suggestions off" : result.product.snoozeUntil && result.product.snoozeUntil > localDate(settings.timezone) ? "Snoozed" : "Ran out · added to list"));
-    sessionRows.set(detection.code, row);
+    row.message = sessionMessage(type, result.product, settings);
+    sessionRows.set(key, row);
+    let eventId = result.event.id; let eventQty = qty;
     navigator.vibrate?.(55);
     confirmationOpen = true;
     try {
       await showScanConfirmation({
-        name: row.name, message: row.message, mode: type,
-        onRename: async nextName => { await saveProduct(detection.code, { name: nextName, lookup: { ...result.product.lookup, state: "manual" } }, ["name"]); row.name = nextName; },
-        onRemove: async () => { await voidEvent(type === "purchase" ? "purchases" : "depletions", result.event.id); row.qty -= qty; row.ids = row.ids.filter(id => id !== result.event.id); if (row.qty <= 0) sessionRows.delete(detection.code); }
+        name: row.name, message: row.message, mode: type, qty, aiIdentified: details.source === "Vision identification",
+        onRename: async nextName => { await saveProduct(detection.code, { name: nextName, lookup: { ...result.product.lookup, state: "manual" } }, ["name"]); for (const other of sessionRows.values()) if (other.code === detection.code) other.name = nextName; },
+        onQuantity: async nextQty => {
+          const replacement = await correctEvent(type === "purchase" ? "purchases" : "depletions", eventId, nextQty);
+          row.ids = row.ids.map(id => id === eventId ? replacement.id : id); row.qty += nextQty - eventQty;
+          eventId = replacement.id; eventQty = nextQty;
+          await refreshSessionMessage(row);
+        },
+        onRemove: async () => { await voidEvent(type === "purchase" ? "purchases" : "depletions", eventId); row.qty -= eventQty; row.ids = row.ids.filter(id => id !== eventId); if (row.qty <= 0) sessionRows.delete(key); }
       });
     } finally {
       confirmationOpen = false;
@@ -134,6 +161,7 @@ async function renderRoute() {
     settings, activeDraft, toast, acceptCode, identifyWithoutBarcode,
     setMode: async mode => { await updateSettings({ lastMode: mode }); await setMeta("activeSession", { id: sessionId, startedAt: (await getMeta("activeSession"))?.startedAt ?? new Date().toISOString(), mode }); settings.lastMode = mode; },
     sessionEvents: () => [...sessionRows.values()],
+    editSessionRow,
     today: (timezone, date) => localDate(timezone, date),
     refresh: renderRoute,
     finishScanDraft: async () => {

@@ -26,3 +26,18 @@ export function button(label, className = "secondary", handler = null) {
 export function field(labelText, input) {
   return el("label", {}, [document.createTextNode(labelText), input]);
 }
+
+export function onLongPress(node, handler, delay = 500) {
+  let timer = null; let start = null;
+  const cancel = () => { clearTimeout(timer); timer = null; node.classList.remove("is-pressing"); };
+  node.addEventListener("pointerdown", event => {
+    if (event.button) return;
+    start = { x: event.clientX, y: event.clientY }; node.classList.add("is-pressing");
+    timer = setTimeout(() => { timer = null; node.classList.remove("is-pressing"); navigator.vibrate?.(20); handler(); }, delay);
+  });
+  node.addEventListener("pointermove", event => { if (timer && Math.hypot(event.clientX - start.x, event.clientY - start.y) > 10) cancel(); });
+  for (const type of ["pointerup", "pointercancel", "pointerleave"]) node.addEventListener(type, cancel);
+  node.addEventListener("contextmenu", event => event.preventDefault());
+  node.addEventListener("keydown", event => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); handler(); } });
+  node.addEventListener("click", event => { if (event.detail === 0) handler(); });
+}

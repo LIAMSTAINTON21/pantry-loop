@@ -43,11 +43,18 @@ export class CameraScanner {
   constructor(video, onCode, onState) {
     this.video = video; this.onCode = onCode; this.onState = onState;
     this.gate = new RepeatGate(); this.running = false; this.inFlight = false; this.timer = null; this.lastVisible = [];
+    this.pauseReasons = new Set();
   }
+  get paused() { return this.pauseReasons.size > 0; }
+  setPaused(reason, paused) { if (paused) this.pauseReasons.add(reason); else this.pauseReasons.delete(reason); }
   async start({ forceFallback = false } = {}) {
     if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) throw new Error("Camera access needs HTTPS (or localhost on this phone).");
-    this.stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 }, height: { ideal: 720 } } });
-    this.video.srcObject = this.stream; await this.video.play();
+    this.stopped = false;
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: { ideal: "environment" }, width: { ideal: 1280 }, height: { ideal: 720 } } });
+    // stop() may have been called while the camera was opening; release it instead of starting a loop nobody owns.
+    if (this.stopped) { stream.getTracks().forEach(track => track.stop()); return; }
+    this.stream = stream; this.video.srcObject = stream; await this.video.play();
+    if (this.stopped) return;
     this.running = true;
     this.detector = null;
     if (!forceFallback && "BarcodeDetector" in window) {
@@ -57,6 +64,7 @@ export class CameraScanner {
       } catch { this.detector = null; }
     }
     if (!this.detector) await this.prepareFallback();
+    if (this.stopped) return;
     this.onState?.(this.detector ? "native" : "fallback");
     this.loop();
   }
@@ -87,10 +95,11 @@ export class CameraScanner {
   loop() {
     if (!this.running) return;
     this.timer = setTimeout(async () => {
-      if (!this.running || this.inFlight) return this.loop();
+      if (!this.running || this.inFlight || this.paused) return this.loop();
       this.inFlight = true;
       try {
         const detections = await this.decode();
+        if (this.paused) return;
         const valid = [];
         for (const detection of detections) {
           try { valid.push({ ...detection, code: normalizeBarcode(detection.rawValue, detection.format) }); } catch { /* ignore non-retail results */ }
@@ -99,7 +108,7 @@ export class CameraScanner {
         const selected = valid.slice(0, 1);
         this.lastVisible = selected.map(item => item.code);
         const accepted = this.gate.observe(this.lastVisible);
-        if (accepted[0]) await this.onCode(selected.find(item => item.code === accepted[0]));
+        if (accepted[0] && !this.paused) await this.onCode(selected.find(item => item.code === accepted[0]));
       } catch (error) {
         if (this.detector) {
           try { this.detector = null; await this.prepareFallback(); this.onState?.("fallback"); }
@@ -110,5 +119,5 @@ export class CameraScanner {
     }, 140);
   }
   modeChanged() { this.gate.reset({ requireRemoval: this.lastVisible }); }
-  stop() { this.running = false; clearTimeout(this.timer); this.stream?.getTracks().forEach(track => track.stop()); this.video.srcObject = null; }
+  stop() { this.stopped = true; this.running = false; clearTimeout(this.timer); this.stream?.getTracks().forEach(track => track.stop()); this.video.srcObject = null; }
 }
