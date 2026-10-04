@@ -1,7 +1,30 @@
 import { normalizeBarcode } from "../barcode.js";
 import { CameraScanner } from "../scanner.js";
-import { el, empty, sectionTitle, button, field, onLongPress } from "../ui.js";
+import { el, button, field, onLongPress } from "../ui.js";
 import { openSheet, stepper } from "../sheet.js";
+import { icon } from "../icons.js";
+
+const MODE_COPY = {
+  buy: { label: "Add to stock", hint: "Scan to add to your stock", submit: "Add to stock" },
+  finished: { label: "Used up", hint: "Scan a pack you’ve finished", submit: "Mark used up" }
+};
+
+function showManualEntry(mode, { onSubmit, onClose }) {
+  const error = el("p", { class: "confirm-error", role: "alert" });
+  const code = el("input", { inputmode: "numeric", autocomplete: "off", enterkeyhint: "done", placeholder: "e.g. 5000112548167", required: "", "aria-describedby": "manual-error" });
+  error.id = "manual-error";
+  const format = el("select");
+  [["ean_13", "EAN-13 (most UK groceries)"], ["ean_8", "EAN-8"], ["upc_a", "UPC-A"], ["upc_e", "UPC-E"], ["code_128", "Code 128"]].forEach(([value, label]) => format.append(el("option", { value, text: label })));
+  const qty = stepper({ value: 1, min: 1, label: "Pack quantity", unit: "packs" });
+  const submit = el("button", { type: "submit", class: "primary", text: MODE_COPY[mode].submit });
+  const form = el("form", { class: "stack" }, [field("Barcode number", code), field("Barcode type", format), qty.node, error, submit, button("Cancel", "ghost", () => sheet.close())]);
+  const sheet = openSheet({ title: "Type a barcode", subtitle: "Use the numbers printed under the bars.", content: [form], onClose });
+  form.addEventListener("submit", event => {
+    event.preventDefault();
+    sheet.run(() => onSubmit({ code: code.value, format: format.value, qty: qty.value }), { error });
+  });
+  requestAnimationFrame(() => code.focus());
+}
 
 function showSessionEditor(item, { onSave, onRemove, onOpen }) {
   return new Promise(resolve => {
@@ -21,35 +44,44 @@ function showSessionEditor(item, { onSave, onRemove, onOpen }) {
 
 export async function renderScan(context) {
   const { settings, setMode, acceptCode, toast } = context;
-  const root = el("div", { class: "stack" });
-  const intro = sectionTitle(settings.lastMode === "buy" ? "Bring groceries in." : "Mark a pack finished.", "Known barcodes fill themselves in. If one is missing, use a photo or type the details.");
-  root.append(intro);
-  const mode = el("div", { class: "mode-switch", role: "group", "aria-label": "Scanning mode" });
+  const root = el("div", { class: "stack scan-view" });
+  let mode = settings.lastMode === "finished" ? "finished" : "buy";
+  root.append(el("h1", { class: "sr-only", text: "Scan groceries" }));
+
+  // Mode toggle sits directly above the camera so the camera is the first thing on screen.
+  const modes = el("div", { class: "mode-switch", role: "group", "aria-label": "What are you scanning?" });
+  const hint = el("p", { class: "camera-hint", "aria-live": "polite" });
+  const syncMode = () => {
+    modes.querySelectorAll("button").forEach(btn => btn.setAttribute("aria-pressed", String(btn.dataset.mode === mode)));
+    hint.replaceChildren(icon(mode === "buy" ? "plus" : "minus", { size: 16 }), document.createTextNode(MODE_COPY[mode].hint));
+    root.dataset.mode = mode;
+  };
   for (const value of ["buy", "finished"]) {
-    const control = el("button", { type: "button", text: value === "buy" ? "Buy / add stock" : "Finished / use up", "aria-pressed": settings.lastMode === value });
+    const control = el("button", { type: "button", "data-mode": value }, [icon(value === "buy" ? "plus" : "minus", { size: 18 }), el("span", { text: MODE_COPY[value].label })]);
     control.addEventListener("click", async () => {
+      if (mode === value) return;
+      mode = value; syncMode();
       await setMode(value); scanner?.modeChanged();
-      document.querySelectorAll(".mode-switch button").forEach(btn => btn.setAttribute("aria-pressed", String(btn === control)));
-      intro.querySelector("h1").textContent = value === "buy" ? "Bring groceries in." : "Mark a pack finished.";
-      submitManual.textContent = value === "buy" ? "Add purchase" : "Mark finished";
     });
-    mode.append(control);
+    modes.append(control);
   }
-  root.append(mode);
+  root.append(modes);
+
   if (context.activeDraft?.scanningActive && !context.activeDraft.completedAt) {
-    root.append(el("div", { class: "callout stack" }, [
-      el("p", { class: "item-title", text: "Scanning this shopping list" }),
-      el("p", { class: "meta", text: "Buy scans are linked to this exact shop. Finish when the bags are unpacked." }),
-      button("Finish scanning this shop", "secondary", async () => { await context.finishScanDraft(); toast("Shopping session closed"); context.refresh(); })
+    root.append(el("div", { class: "scan-banner", role: "status" }, [
+      icon("cart", { size: 18 }),
+      el("p", { text: "Scans are linked to your shopping list" }),
+      button("Finish", "ghost scan-banner-action", async () => { await context.finishScanDraft(); toast("Shop finished"); context.refresh(); })
     ]));
   }
 
   const camera = el("div", { class: "camera-shell" });
   const video = el("video", { muted: "", playsinline: "", "aria-label": "Camera preview" });
   video.muted = true;
-  const message = el("div", { class: "camera-message" }, [el("p", { text: "Camera is starting…" })]);
-  camera.append(video, el("div", { class: "aim", "aria-hidden": "true" }), message); root.append(camera);
-  const controls = el("div", { class: "row wrap" }); root.append(controls);
+  const message = el("div", { class: "camera-message" }, [el("p", { text: "Opening the camera…" })]);
+  camera.append(video, el("div", { class: "aim", "aria-hidden": "true" }), hint, message);
+  root.append(camera);
+  syncMode();
 
   let scanner;
   let closeEditor = null;
@@ -62,47 +94,49 @@ export async function renderScan(context) {
     cameraVisible = entry.isIntersecting && usable > 0 && entry.intersectionRect.height >= 0.6 * usable;
     camera.classList.toggle("is-paused", !cameraVisible);
     scanner?.setPaused("offscreen", !cameraVisible);
-  }, { rootMargin: "-80px 0px -90px 0px", threshold: Array.from({ length: 21 }, (_, index) => index / 20) });
+  }, { rootMargin: "-64px 0px -90px 0px", threshold: Array.from({ length: 21 }, (_, index) => index / 20) });
   visibility.observe(camera);
   camera.append(el("p", { class: "camera-paused", text: "Scanner paused · scroll up to scan", "aria-hidden": "true" }));
   async function startCamera() {
-    message.hidden = false; message.firstChild.textContent = "Opening rear camera…";
+    message.hidden = false; message.replaceChildren(el("p", { text: "Opening the camera…" }));
+    camera.classList.remove("is-ready");
     try {
       scanner?.stop();
       scanner = new CameraScanner(video, async detection => acceptCode(detection), (state, error) => {
-        if (state === "native" || state === "fallback") { message.hidden = true; toast(`Scanner ready · ${state === "native" ? "phone decoder" : "offline decoder"}`); }
+        if (state === "native" || state === "fallback") { message.hidden = true; camera.classList.add("is-ready"); }
         if (state === "decode-error") console.warn("Decoder error", error);
       });
       scanner.setPaused("offscreen", !cameraVisible);
       await scanner.start({ forceFallback: settings.forceFallback });
     } catch (error) {
-      message.hidden = false; message.replaceChildren(el("div", { class: "stack" }, [el("p", { text: error.name === "NotAllowedError" ? "Camera permission was denied. You can retry or enter a code manually." : error.message }), button("Retry camera", "primary", startCamera)]));
+      message.hidden = false;
+      message.replaceChildren(el("div", { class: "camera-error" }, [
+        icon("camera", { size: 28 }),
+        el("p", { text: error.name === "NotAllowedError" ? "Camera access is off. Allow it in your browser settings, or type the barcode instead." : error.message }),
+        button("Try the camera again", "primary", startCamera)
+      ]));
     }
   }
-  controls.append(button("Enable / retry camera", "secondary", startCamera));
-  controls.append(button("No barcode? Identify product", "primary", async () => { scanner?.stop(); await context.identifyWithoutBarcode(); if (!document.hidden) context.refresh(); }));
 
-  const manualForm = el("form", { class: "stack manual-form" });
-  const code = el("input", { inputmode: "numeric", autocomplete: "off", placeholder: "e.g. 5000112548167", required: "" });
-  const format = el("select");
-  [["ean_13", "EAN-13"], ["ean_8", "EAN-8"], ["upc_a", "UPC-A"], ["upc_e", "UPC-E"], ["code_128", "Code 128"]].forEach(([value, label]) => format.append(el("option", { value, text: label })));
-  const qty = el("input", { type: "number", min: "1", step: "1", value: "1", inputmode: "numeric" });
-  const submitManual = button(settings.lastMode === "buy" ? "Add purchase" : "Mark finished", "primary"); submitManual.type = "submit";
-  manualForm.append(field("Code", code), field("Format", format), field("Pack quantity", qty), submitManual);
-  manualForm.addEventListener("submit", async event => {
-    event.preventDefault();
-    try { const canonical = normalizeBarcode(code.value, format.value); await acceptCode({ code: canonical, format: format.value, qty: Number(qty.value), source: "manual" }); code.value = ""; }
-    catch (error) { toast(error.message, { error: true }); }
-  });
-  const manualEntry = el("details", { class: "card manual-entry" }, [el("summary", { text: "Can’t scan it? Enter the barcode" }), manualForm]);
-  root.append(manualEntry);
+  const pauseFor = async (reason, task) => { scanner?.setPaused(reason, true); try { await task(); } finally { scanner?.setPaused(reason, false); } };
+  const typeBarcode = el("button", { type: "button", class: "scan-action" }, [icon("keyboard", { size: 20 }), el("span", { text: "Type barcode" })]);
+  typeBarcode.addEventListener("click", () => pauseFor("manual", () => new Promise(resolve => showManualEntry(mode, {
+    onClose: resolve,
+    onSubmit: async ({ code, format, qty }) => {
+      const canonical = normalizeBarcode(code, format);
+      setTimeout(() => acceptCode({ code: canonical, format, qty, source: "manual" }).catch(error => toast(error.message, { error: true })), 200);
+    }
+  }))));
+  const identify = el("button", { type: "button", class: "scan-action" }, [icon("sparkle", { size: 20 }), el("span", { text: "No barcode" })]);
+  identify.addEventListener("click", async () => { scanner?.stop(); await context.identifyWithoutBarcode(); if (!document.hidden) context.refresh(); });
+  root.append(el("div", { class: "scan-actions" }, [typeBarcode, identify]));
 
   const session = el("div", { class: "stack" });
   const renderSession = () => {
-    session.replaceChildren(el("h2", { text: "This session" }));
     const events = context.sessionEvents();
-    if (!events.length) { session.append(empty("Nothing logged yet", "Your saved scans will appear here.")); return; }
-    session.append(el("p", { class: "meta session-hint", text: "Scans are saved to your stock straight away. Hold an item to change or remove it." }));
+    session.replaceChildren(el("h2", { class: "list-section" }, ["This session", events.length ? el("span", { class: "list-count", text: `${events.length} item${events.length === 1 ? "" : "s"}` }) : null]));
+    if (!events.length) { session.append(el("p", { class: "meta session-hint", text: "Scans save to your stock straight away and show up here." })); return; }
+    session.append(el("p", { class: "meta session-hint", text: "Hold an item to change the amount or remove it." }));
     for (const item of events) {
       const card = el("article", { class: "session-item", tabindex: "0", role: "button", "aria-label": `${item.name}, ${item.qty} ${item.type === "purchase" ? "bought" : "finished"}. Press to change or remove.` }, [el("div", { class: "row spread" }, [el("p", { class: "item-title", text: item.name }), el("span", { class: item.type === "purchase" ? "badge" : "badge warn", text: `${item.type === "purchase" ? "+" : "−"}${item.qty}` })]), el("p", { class: "meta", text: item.message })]);
       onLongPress(card, async () => {
