@@ -164,6 +164,34 @@ export async function voidEvent(storeName, id) {
   await updateStockInTransaction(tx, event.barcode); await tx.done; notifyDataChanged(); return true;
 }
 
+// Sets the total quantity of a group of events in one transaction: keeps the first still-active event (corrected if needed)
+// and voids the rest, or voids all of them when qty is 0. Ids already voided elsewhere are ignored.
+export async function setEventsQuantity(storeName, ids, qty) {
+  if (!new Set(["purchases", "depletions"]).has(storeName)) throw new Error("Invalid event store");
+  if (!Number.isSafeInteger(qty) || qty < 0) throw new Error("Quantity must be zero or more");
+  const other = storeName === "purchases" ? "depletions" : "purchases";
+  const db = await openDatabase(); const tx = db.transaction([storeName, other, "products"], "readwrite");
+  const store = tx.objectStore(storeName); const now = new Date().toISOString();
+  const active = (await Promise.all(ids.map(id => store.get(id)))).filter(event => event && !event.voidedAt);
+  if (!active.length) { await tx.done; return { ids: [], qty: 0 }; }
+  const [first, ...rest] = qty > 0 ? active : [null, ...active];
+  for (const event of rest) await store.put({ ...event, voidedAt: now });
+  let keptId = null;
+  if (first && first.qty !== qty) {
+    const replacement = { ...first, id: crypto.randomUUID(), qty, replacesId: first.id, voidedAt: null };
+    await store.put({ ...first, voidedAt: now }); await store.add(replacement); keptId = replacement.id;
+  } else if (first) keptId = first.id;
+  if (!keptId && storeName === "purchases") {
+    const earliest = active.reduce((a, b) => (a.seq < b.seq ? a : b));
+    const later = (await store.index("barcode").getAll(earliest.barcode)).some(item => !item.voidedAt && item.seq > earliest.seq && !active.some(event => event.id === item.id));
+    const product = await tx.objectStore("products").get(earliest.barcode);
+    const snooze = active.map(event => event.clearedSnoozeUntil).find(Boolean);
+    if (snooze && !later && product?.snoozeUntil === null) await tx.objectStore("products").put({ ...product, snoozeUntil: snooze, updatedAt: now });
+  }
+  await updateStockInTransaction(tx, active[0].barcode); await tx.done; notifyDataChanged();
+  return { ids: keptId ? [keptId] : [], qty: keptId ? qty : 0 };
+}
+
 export async function correctEvent(storeName, id, qty) {
   if (!Number.isSafeInteger(qty) || qty <= 0) throw new Error("Quantity must be positive");
   const other = storeName === "purchases" ? "depletions" : "purchases";

@@ -65,13 +65,15 @@ async function identifyPhoto(image, barcode) {
   return product;
 }
 
-export function showIdentificationFallback({ barcode = null, barcodeFormat = null, settings, toast }) {
+export function showIdentificationFallback({ barcode = null, barcodeFormat = null, settings, toast, autoAi = false }) {
   return new Promise(resolve => {
     const dialog = el("dialog", { class: "identify-dialog", "aria-labelledby": "identify-title" });
     const panel = el("div", { class: "identify-panel" }); dialog.append(panel); document.body.append(dialog);
     let barcodeScanner = null;
     let screenVersion = 0;
     let draft = {};
+    let aiMode = autoAi && Boolean(barcode);
+    const aiBadge = text => el("p", { class: "ai-badge", text });
     const stopBarcodeScanner = () => { barcodeScanner?.stop(); barcodeScanner = null; };
     const finish = value => { screenVersion++; stopBarcodeScanner(); dialog.classList.add("is-leaving"); setTimeout(() => { dialog.close(); dialog.remove(); resolve(value); }, 180); };
     const errorText = barcode ? "We couldn’t find this barcode in the product catalogue." : "No barcode? You can still add the product.";
@@ -99,14 +101,17 @@ export function showIdentificationFallback({ barcode = null, barcodeFormat = nul
     const showLoading = async file => {
       stopBarcodeScanner();
       const version = ++screenVersion;
-      panel.replaceChildren(el("span", { class: "spinner identify-spinner", "aria-hidden": "true" }), el("h1", { id: "identify-title", text: "Reading the package…" }), el("p", { class: "confirm-message", text: "Looking for the product, brand, variant and pack size." }), el("div", { class: "identify-skeleton" }));
+      panel.replaceChildren(el("span", { class: "spinner identify-spinner", "aria-hidden": "true" }), aiMode && aiBadge("AI MODE"), el("h1", { id: "identify-title", text: "Reading the package…" }), el("p", { class: "confirm-message", text: "Looking for the product, brand, variant and pack size." }), el("div", { class: "identify-skeleton" }));
       try {
         const image = typeof file === "string" ? file : await compressProductImage(file);
         const product = await identifyPhoto(image, barcode);
         if (version !== screenVersion) return;
+        // In AI mode the result is used as-is; the scan confirmation still lets the user fix the name or remove it.
+        if (aiMode) { finish({ ...draft, ...product, barcode, barcodeFormat }); return; }
         showForm({ ...draft, ...product }, { code: barcode, format: barcodeFormat });
       } catch (error) {
         if (version !== screenVersion) return;
+        aiMode = false;
         toast(`${error.message}. Your barcode has been kept.`, { error: true });
         showForm(draft, { code: barcode, format: barcodeFormat });
       }
@@ -128,12 +133,30 @@ export function showIdentificationFallback({ barcode = null, barcodeFormat = nul
         showLoading(canvas.toDataURL("image/jpeg", 0.78));
       } });
       capture.disabled = true;
+      let countdown = null; let countdownStarted = false;
+      const autoCapture = () => {
+        if (countdownStarted) return;
+        countdownStarted = true;
+        let remaining = 3;
+        const tick = () => {
+          if (version !== screenVersion || !barcodeScanner) return;
+          if (remaining === 0) {
+            if (!video.videoWidth) { countdown = setTimeout(tick, 300); return; }
+            capture.click(); return;
+          }
+          status.textContent = `Hold the front label in view · reading in ${remaining}…`; remaining -= 1;
+          countdown = setTimeout(tick, 1000);
+        };
+        tick();
+      };
       const photo = el("input", { type: "file", accept: "image/*", capture: "environment", class: "sr-only", "aria-label": "Choose product photo" });
       photo.addEventListener("change", () => { if (photo.files?.[0]) showLoading(photo.files[0]); });
-      panel.replaceChildren(el("p", { class: "confirm-kicker", text: "BARCODE + PRODUCT LABEL" }), el("h1", { id: "identify-title", text: "Scan, then show the label" }), el("div", { class: "identify-camera" }, [video, el("div", { class: "aim", "aria-hidden": "true" })]), codeStatus, status, capture, photo, el("button", { type: "button", class: "secondary", text: "Take or choose a photo", onclick: () => { stopBarcodeScanner(); photo.click(); } }), el("button", { type: "button", class: "identify-back", text: "Back to product details", onclick: () => showForm(draft, { code: barcode, format: barcodeFormat }) }));
+      if (aiMode) capture.textContent = "Read it now";
+      panel.replaceChildren(aiMode ? aiBadge("AI MODE") : el("p", { class: "confirm-kicker", text: "BARCODE + PRODUCT LABEL" }), aiMode && el("p", { class: "confirm-message ai-mode-message", text: "This barcode isn’t in the product catalogue, so AI will read the pack instead." }), el("h1", { id: "identify-title", text: aiMode ? "Show the front label" : "Scan, then show the label" }), el("div", { class: "identify-camera" }, [video, el("div", { class: "aim", "aria-hidden": "true" })]), codeStatus, status, capture, photo, el("button", { type: "button", class: "secondary", text: "Take or choose a photo", onclick: () => { clearTimeout(countdown); stopBarcodeScanner(); photo.click(); } }), el("button", { type: "button", class: "identify-back", text: aiMode ? "Enter details manually instead" : "Back to product details", onclick: () => { clearTimeout(countdown); aiMode = false; showForm(draft, { code: barcode, format: barcodeFormat }); } }));
       try {
         barcodeScanner = new CameraScanner(video, async detection => {
-          if (version !== screenVersion || detection.code === barcode) return;
+          // In AI mode the barcode is already fixed by the main scan; don't let other codes in view replace it.
+          if (version !== screenVersion || detection.code === barcode || aiMode) return;
           barcode = detection.code; barcodeFormat = detection.format;
           codeStatus.textContent = `Barcode saved: ${barcode}`;
           status.textContent = "Barcode found. Checking product details…";
@@ -141,10 +164,16 @@ export function showIdentificationFallback({ barcode = null, barcodeFormat = nul
           if (version !== screenVersion) return;
           if (result.match) draft = { ...draft, ...result.match };
           status.textContent = "Now show the front label and tap Read name and brand.";
-        }, state => { if (version === screenVersion && (state === "native" || state === "fallback")) { capture.disabled = false; status.textContent = "Keep the product name and brand clearly visible when taking the picture."; } });
+        }, state => {
+          if (version !== screenVersion || !(state === "native" || state === "fallback")) return;
+          capture.disabled = false;
+          if (aiMode) autoCapture();
+          else status.textContent = "Keep the product name and brand clearly visible when taking the picture.";
+        });
         await barcodeScanner.start({ forceFallback: settings.forceFallback });
       } catch (error) {
         status.textContent = error.name === "NotAllowedError" ? "Camera permission was denied. Go back and type the product details." : error.message;
+        if (aiMode) { aiMode = false; toast(status.textContent, { error: true }); showOptions(); }
       }
     };
 
@@ -168,6 +197,7 @@ export function showIdentificationFallback({ barcode = null, barcodeFormat = nul
     };
 
     dialog.addEventListener("cancel", event => { event.preventDefault(); finish(null); });
-    showOptions(); dialog.showModal(); requestAnimationFrame(() => dialog.classList.add("is-visible"));
+    if (aiMode) showBarcodeScanner(); else showOptions();
+    dialog.showModal(); requestAnimationFrame(() => dialog.classList.add("is-visible"));
   });
 }
