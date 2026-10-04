@@ -2,6 +2,18 @@ import { generateList } from "../list.js";
 import { getMeta, getSettings, getState, logCheckedDraft, setMeta, saveProduct } from "../db.js";
 import { formatFullShoppingList, nextTescoItem, normaliseTescoProgress, openTescoSearch, undoTescoProgress, updateTescoProgress } from "../tesco.js";
 import { el, empty, sectionTitle, button } from "../ui.js";
+import { confirmSheet, openSheet } from "../sheet.js";
+import { icon } from "../icons.js";
+
+function showItemSheet(item, { onSnooze }) {
+  const error = el("p", { class: "confirm-error", role: "alert" });
+  const weeks = [1, 2, 4].map(count => el("button", { type: "button", class: "secondary", text: `${count} week${count > 1 ? "s" : ""}`, onclick: () => sheet.run(() => onSnooze(count), { error }) }));
+  const sheet = openSheet({
+    title: item.name,
+    subtitle: [item.size, ...item.reasons.map(reason => reason.label)].filter(Boolean).join(" · "),
+    content: [el("p", { class: "sheet-label", text: "Not needed right now? Hide it for:" }), el("div", { class: "choice-row" }, weeks), error, button("Close", "ghost", () => sheet.close())]
+  });
+}
 
 function mergeDraft(generated, current) {
   const old = new Map((current?.items ?? []).map(item => [item.barcode, item]));
@@ -20,7 +32,7 @@ export async function renderList(context) {
     await setMeta("shoppingDraft", draft);
   }
 
-  const root = el("div", { class: "stack" }); root.append(sectionTitle("Your next shop.", "Run-outs come first. Suggestions stay editable and are saved on this device."));
+  const root = el("div", { class: "stack list-view" }); root.append(sectionTitle("Your next shop.", "Tick things off as you shop. Tap an item to snooze it."));
   if (!draft.items.length) { root.append(empty("Nothing to buy right now", "Finish a pack, add a staple, or build purchase history to get suggestions.")); return { root }; }
 
   const renderSection = (title, items) => {
@@ -33,20 +45,17 @@ export async function renderList(context) {
       const checkbox = el("input", { type: "checkbox", "aria-label": `Mark ${item.name} checked` }); checkbox.checked = item.checked;
       const quantity = el("output", { text: String(item.qty), "aria-label": `${item.qty} packs` });
       const save = async () => { draft.updatedAt = new Date().toISOString(); return setMeta("shoppingDraft", draft); };
-      checkbox.addEventListener("change", () => { item.checked = checkbox.checked; save(); });
+      checkbox.addEventListener("change", () => { item.checked = checkbox.checked; save(); updateShopBar(); });
       const minus = button("−", "secondary", () => { item.qty = Math.max(1, item.qty - 1); quantity.textContent = String(item.qty); save(); }); minus.setAttribute("aria-label", `Reduce ${item.name} quantity`);
       const plus = button("+", "secondary", () => { item.qty += 1; quantity.textContent = String(item.qty); save(); }); plus.setAttribute("aria-label", `Increase ${item.name} quantity`);
-      const snooze = button("Snooze", "ghost snooze", async () => {
-        const weeks = Number(prompt("Snooze for 1, 2, or 4 weeks", "1")); if (![1, 2, 4].includes(weeks)) return;
+      const snooze = async weeks => {
         const until = new Date(); until.setDate(until.getDate() + weeks * 7);
         await saveProduct(item.barcode, { snoozeUntil: context.today(settings.timezone, until) }); context.toast(`Snoozed ${item.name} for ${weeks} week${weeks > 1 ? "s" : ""}`); context.refresh();
-      });
+      };
       const note = item.reasons.find(reason => reason.note)?.note;
-      group.append(el("article", { class: "list-item" }, [
-        checkbox,
-        el("div", { class: "list-main" }, [el("p", { class: "item-title", text: item.name }), el("p", { class: "meta", text: [item.size, ...item.reasons.map(reason => reason.label)].filter(Boolean).join(" · ") }), note && el("p", { class: "badge warn", text: note })]),
-        el("div", { class: "list-controls" }, [el("div", { class: "quantity" }, [minus, quantity, plus]), snooze])
-      ]));
+      const main = el("button", { type: "button", class: "list-main", "aria-label": `${item.name}. More options` }, [el("span", { class: "item-title", text: item.name }), el("span", { class: "meta", text: [item.size, ...item.reasons.map(reason => reason.label)].filter(Boolean).join(" · ") }), note && el("span", { class: "badge warn", text: note })]);
+      main.addEventListener("click", () => showItemSheet(item, { onSnooze: snooze }));
+      group.append(el("article", { class: "list-item" }, [checkbox, main, el("div", { class: "quantity" }, [minus, quantity, plus])]));
     }
   };
   renderSection("Ran out", draft.items.filter(item => item.section === "ran_out"));
@@ -54,7 +63,9 @@ export async function renderList(context) {
 
   let tescoProgress = normaliseTescoProgress(draft.items, draft.tescoExport);
   draft.tescoExport = tescoProgress;
-  const tesco = el("section", { class: "card stack tesco-export" });
+  const tesco = el("details", { class: "card tesco-export" });
+  const tescoMeta = el("span", { class: "meta" });
+  const tescoBody = el("div", { class: "stack tesco-body" });
   const tescoStatus = el("div", { class: "stack" });
   const saveTescoProgress = async () => { draft.tescoExport = tescoProgress; draft.updatedAt = new Date().toISOString(); await setMeta("shoppingDraft", draft); };
   const confirmation = (kind, onConfirm) => {
@@ -73,7 +84,7 @@ export async function renderList(context) {
     });
     panel.append(el("div", { class: "row wrap" }, [confirm, cancel]));
     tesco.querySelector(".export-warning")?.remove();
-    tesco.append(panel); confirm.focus();
+    tescoBody.append(panel); confirm.focus();
   };
   const renderTescoStatus = () => {
     const added = new Set(tescoProgress.addedBarcodes);
@@ -81,6 +92,7 @@ export async function renderList(context) {
     const opened = new Set(tescoProgress.openedBarcodes);
     const next = nextTescoItem(draft.items, tescoProgress);
     const completed = added.size + skipped.size;
+    tescoMeta.textContent = !tescoProgress.confirmedAt ? "Copy the list, or add items one at a time" : next ? `${completed} of ${draft.items.length} done · next: ${next.name}` : "All items reviewed";
     const undoProgress = button("Undo last mark", "ghost", async () => { tescoProgress = undoTescoProgress(draft.items, tescoProgress); await saveTescoProgress(); renderTescoStatus(); });
     undoProgress.disabled = !tescoProgress.history.length;
     tescoStatus.replaceChildren(...[
@@ -89,7 +101,7 @@ export async function renderList(context) {
         tescoProgress.confirmedAt && el("div", { class: "row wrap" }, [
           undoProgress,
           button("Reset local progress", "ghost", async () => {
-            if (!confirm("Reset Pantry Loop’s Tesco progress? This cannot close Tesco tabs or remove anything from your Tesco basket.")) return;
+            if (!await confirmSheet({ title: "Reset Tesco progress?", message: "This only clears the marks in Pantry Loop. It can’t close Tesco tabs or change your Tesco basket.", confirmLabel: "Reset progress", danger: true })) return;
             tescoProgress = normaliseTescoProgress(draft.items); await saveTescoProgress(); renderTescoStatus();
           })
         ])
@@ -114,9 +126,9 @@ export async function renderList(context) {
       tescoProgress.confirmedAt && !next && el("p", { class: "callout success", text: "All items have been reviewed locally. Check your Tesco basket before checkout." })
     ].filter(Boolean));
   };
-  tesco.append(
-    el("h2", { text: "Send to Tesco" }),
-    el("p", { class: "meta", text: "Tesco does not provide a supported public basket import. Use a full text copy or open one official Tesco search at a time." }),
+  tesco.append(el("summary", { class: "tesco-summary" }, [el("span", { class: "tesco-summary-text" }, [el("span", { class: "item-title", text: "Send to Tesco" }), tescoMeta]), icon("chevron", { size: 18 })]), tescoBody);
+  tescoBody.append(
+    el("p", { class: "meta", text: "Tesco has no basket import, so copy the full list or open one Tesco search at a time." }),
     el("div", { class: "row wrap" }, [
       button("Copy full list", "secondary", () => confirmation("copy", async () => {
         await navigator.clipboard.writeText(formatFullShoppingList(draft.items)); context.toast("Full shopping list copied");
@@ -129,9 +141,17 @@ export async function renderList(context) {
     tescoStatus
   );
   renderTescoStatus();
+  if (tescoProgress.confirmedAt && nextTescoItem(draft.items, tescoProgress)) tesco.open = true;
   root.append(tesco);
 
-  const actions = el("section", { class: "card stack" }, [el("h2", { text: "Done shopping?" }), el("p", { class: "meta", text: "Choose exactly how to record this shop." })]);
-  actions.append(button("I’ll scan the bags", "primary", async () => { draft.scanningActive = true; draft.completionMode = "scan"; draft.updatedAt = new Date().toISOString(); await setMeta("shoppingDraft", draft); location.hash = "#scan"; }), button("Log checked purchases", "secondary", async () => { const result = await logCheckedDraft(draft); context.toast(result.alreadyCompleted ? "This shop is already recorded" : `Recorded ${result.count} pack${result.count === 1 ? "" : "s"}`); context.refresh(); }));
-  root.append(actions); return { root };
+  // "Done shopping" stays reachable above the nav instead of sitting at the bottom of the page.
+  const logChecked = button("Log ticked", "secondary", async () => { const result = await logCheckedDraft(draft); context.toast(result.alreadyCompleted ? "This shop is already recorded" : `Recorded ${result.count} pack${result.count === 1 ? "" : "s"}`); context.refresh(); });
+  const scanBags = button("Scan the bags", "primary", async () => { draft.scanningActive = true; draft.completionMode = "scan"; draft.updatedAt = new Date().toISOString(); await setMeta("shoppingDraft", draft); location.hash = "#scan"; });
+  function updateShopBar() {
+    const ticked = draft.items.filter(item => item.checked).length;
+    logChecked.textContent = ticked ? `Log ${ticked} ticked` : "Log ticked"; logChecked.disabled = !ticked;
+  }
+  root.append(el("div", { class: "shop-bar", role: "region", "aria-label": "Done shopping" }, [el("span", { class: "shop-bar-label", text: "Done shopping?" }), logChecked, scanBags]), el("div", { class: "shop-bar-spacer", "aria-hidden": "true" }));
+  updateShopBar();
+  return { root };
 }

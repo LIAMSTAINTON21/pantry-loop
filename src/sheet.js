@@ -43,3 +43,12 @@ export function stepper({ value, min = 0, label, unit = "", onChange }) {
   set(current);
   return { node, get value() { return current; }, set };
 }
+
+export function confirmSheet({ title, message, confirmLabel, cancelLabel = "Cancel", danger = false }) {
+  return new Promise(resolve => {
+    let answer = false;
+    const yes = el("button", { type: "button", class: danger ? "danger" : "primary", text: confirmLabel, onclick: () => { answer = true; sheet.close(); } });
+    const sheet = openSheet({ title, subtitle: message, onClose: () => resolve(answer), content: [yes, el("button", { type: "button", class: "ghost", text: cancelLabel, onclick: () => sheet.close() })] });
+    requestAnimationFrame(() => yes.focus());
+  });
+}
