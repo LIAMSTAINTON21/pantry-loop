@@ -80,7 +80,6 @@ h2 { margin: 22px 0 6px; font-size: 1.05rem; font-weight: 700; letter-spacing: -
 .tesco-next { padding-top: 4px; }
 .danger { background: #48251f; color: #ffd8d1; border: 1px solid #744039; }
 .ghost { background: transparent; color: var(--muted); border: 1px solid var(--line); }
-.ghost.snooze { min-height: 32px; padding: 0 10px; border: 0; border-radius: 999px; font-size: .74rem; font-weight: 600; }
 button:disabled { opacity: .5; cursor: not-allowed; }
 :focus-visible { outline: 3px solid #fff; outline-offset: 3px; }
 label { display: grid; gap: 6px; color: var(--muted); font-size: .8rem; font-weight: 600; }
@@ -111,11 +110,7 @@ input[type="checkbox"] { width: 24px; min-height: 24px; accent-color: var(--acce
 .camera-shell video { width: 100%; height: 100%; object-fit: cover; }
 .aim { position: absolute; inset: 27% 9%; border: 2px solid var(--accent); border-radius: 14px; box-shadow: 0 0 0 999px #0006; }
 .camera-message { position: absolute; inset: 0; display: grid; place-items: center; padding: 24px; text-align: center; color: var(--muted); }
-.manual-entry { padding: 0; overflow: hidden; }
-.manual-entry summary { display: flex; align-items: center; min-height: 54px; padding: 0 16px; cursor: pointer; color: var(--text); font-weight: 650; list-style-position: inside; }
-.manual-entry[open] summary { border-bottom: 1px solid var(--line); }
-.manual-form { padding: 16px; }
-.session-item, .list-item, .product-item, .activity-item { display: grid; gap: 8px; padding: 12px 14px; background: var(--surface); border-radius: 14px; }
+.session-item, .list-item { display: grid; gap: 8px; padding: 12px 14px; background: var(--surface); border-radius: 14px; }
 .list-section { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 0; }
 .list-count { color: var(--muted); font-size: .78rem; font-weight: 600; }
 .aisle-group { display: grid; gap: 4px; }
@@ -123,7 +118,6 @@ input[type="checkbox"] { width: 24px; min-height: 24px; accent-color: var(--acce
 .list-item { grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 10px 8px 10px 14px; transition: opacity .2s ease; }
 .list-main { display: grid; gap: 2px; min-width: 0; }
 .list-main .badge { margin-top: 4px; }
-.list-controls { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
 .list-item input[type="checkbox"] { appearance: none; width: 24px; min-height: 24px; height: 24px; margin: 0; padding: 0; border: 2px solid var(--accent); border-radius: 50%; background: transparent; cursor: pointer; transition: background-color .15s ease, box-shadow .15s ease; }
 .list-item input[type="checkbox"]:checked { background: var(--accent); box-shadow: inset 0 0 0 4px var(--surface); }
 .list-item:has(input:checked) .item-title { color: var(--muted); text-decoration: line-through; }
@@ -170,7 +164,6 @@ input.switch:checked::after { transform: translateX(20px); background: var(--acc
 .sheet-extra[open] summary { margin-bottom: var(--space-2); }
 .barcode-meta { font-variant-numeric: tabular-nums; word-break: break-all; }
 button.list-main { min-height: 44px; padding: 4px 0; border-radius: 8px; background: transparent; color: var(--text); text-align: left; font-weight: 400; align-content: center; }
-.list-item { grid-template-columns: auto minmax(0, 1fr) auto; }
 .sheet-label { margin: 4px 0 0; color: var(--muted); text-align: left; font-weight: 600; }
 .choice-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: var(--space-2); }
 .tesco-export { padding: 0; overflow: hidden; }
@@ -233,7 +226,6 @@ body:has(.shop-bar) .toast-region { bottom: 160px; }
 .identify-camera video { width: 100%; height: 100%; object-fit: cover; }
 .identify-spinner { align-self: center; width: 54px; height: 54px; margin-bottom: 20px; }
 .identify-skeleton { width: min(480px, 100%); height: 130px; margin: 0 auto; border-radius: 18px; background: linear-gradient(100deg, var(--surface) 20%, var(--surface-2) 45%, var(--surface) 70%); background-size: 200% 100%; animation: shimmer 1.2s infinite linear; }
-.product-image { width: 100%; max-height: 220px; object-fit: contain; border-radius: 12px; background: #fff; }
 @keyframes shimmer { to { background-position-x: -200%; } }
 .scan-confirmation-panel { min-height: 100%; width: min(660px, 100%); margin: 0 auto; padding: max(36px, env(safe-area-inset-top)) 22px max(30px, env(safe-area-inset-bottom)); display: flex; flex-direction: column; justify-content: center; text-align: center; background: var(--bg); }
 .confirm-icon { width: clamp(118px, 34vw, 172px); aspect-ratio: 1; display: grid; place-items: center; align-self: center; margin-bottom: 24px; border-radius: 50%; font-size: clamp(4.4rem, 18vw, 7rem); font-weight: 900; line-height: 1; }
@@ -288,7 +280,6 @@ body:has(.shop-bar) .toast-region { bottom: 160px; }
 @keyframes confirm-turn { from { opacity: 0; transform: rotate(-14deg) scale(.7); } to { opacity: 1; transform: rotate(0) scale(1); } }
 .loading-card { min-height: 50vh; display: grid; place-items: center; align-content: center; gap: 14px; color: var(--muted); }
 .spinner { width: 32px; height: 32px; border: 3px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; }
-.divider { height: 1px; background: var(--line); margin: 8px 0; }
 .callout { padding: 12px 14px; border-left: 3px solid var(--accent); background: var(--surface); border-radius: 0 12px 12px 0; color: var(--muted); }
 .callout.error { border-color: var(--danger); background: #2c1b18; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }

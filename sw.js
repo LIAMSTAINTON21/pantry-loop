@@ -1,4 +1,4 @@
-const CACHE = "pantry-loop-v1.5.0-supabase-7";
+const CACHE = "pantry-loop-v1.6.0-supabase-8";
 const ASSETS = [
   "./src/bootstrap.js?release=cloud-3",
   "./", "./index.html", "./app.css", "./manifest.webmanifest",

@@ -71,6 +71,6 @@ export async function renderSettings(context) {
       root.append(more);
     }
   }
-  root.append(el("section", { class: "card stack" }, [el("h2", { text: "About" }), el("p", { class: "meta", text: `Pantry Loop 1.5.0 · ${state.products.length} products · Barcode details use Open Food Facts. Product photos are uploaded only when you deliberately take one while signed in.` })]));
+  root.append(el("section", { class: "card stack" }, [el("h2", { text: "About" }), el("p", { class: "meta", text: `Pantry Loop 1.6.0 · ${state.products.length} products · Barcode details use Open Food Facts. Product photos are uploaded only when you deliberately take one while signed in.` })]));
   return { root };
 }
