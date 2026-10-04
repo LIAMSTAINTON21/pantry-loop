@@ -2,6 +2,7 @@ import { correctEvent, getMeta, setEventsQuantity, getSettings, localDate, openD
 import { requireAuthentication } from "./auth.js";
 import { startSynchronization, synchronizeNow } from "./sync.js";
 import { showScanConfirmation } from "./confirmation.js";
+import { el } from "./ui.js";
 import { showIdentificationFallback } from "./identification.js";
 import { identifyBarcode, processLookupQueue } from "./lookup.js";
 import { renderScan } from "./views/scan.js";
@@ -61,9 +62,41 @@ function updateNetwork() {
   if (appAuthenticated && navigator.onLine) processLookupQueue();
 }
 
+let updateDialog = null;
+function applyUpdate() {
+  reloadForUpdate = true; cleanup?.(); cleanup = null;
+  waitingWorker.postMessage({ type: "SKIP_WAITING" });
+  // controllerchange normally reloads; reload anyway if it never arrives.
+  setTimeout(() => location.reload(), 4000);
+}
+
+// Updates are required: once a new version is installed the app is blocked until the user taps Update.
+// It waits only while a scan is being confirmed or an unsaved item needs resolving, so nothing is lost.
 function offerUpdate() {
-  if (!waitingWorker || activeRoute === "scan" || savingBlocked) return;
-  toast("An app update is ready", { actionLabel: "Update", duration: 0, action: () => { reloadForUpdate = true; cleanup?.(); waitingWorker.postMessage({ type: "SKIP_WAITING" }); } });
+  if (!waitingWorker || updateDialog || savingBlocked || confirmationOpen) return;
+  const action = el("button", { type: "button", class: "primary", text: "Update now" });
+  updateDialog = el("dialog", { class: "update-dialog", "aria-labelledby": "update-title", "aria-describedby": "update-message" }, [
+    el("div", { class: "update-panel" }, [
+      el("div", { class: "confirm-icon confirm-icon-tick", text: "↻", "aria-hidden": "true" }),
+      el("p", { class: "confirm-kicker", text: "UPDATE REQUIRED" }),
+      el("h1", { id: "update-title", text: "A new version is ready" }),
+      el("p", { id: "update-message", class: "confirm-message", text: "Update to keep using Pantry Loop. Your pantry, lists and scans stay on this phone." }),
+      action
+    ])
+  ]);
+  action.addEventListener("click", () => { action.disabled = true; action.textContent = "Updating…"; applyUpdate(); });
+  updateDialog.addEventListener("cancel", event => event.preventDefault());
+  // Browsers may still close a modal on Escape or the Android back gesture; reopen it so the update stays required.
+  updateDialog.addEventListener("close", () => { if (!reloadForUpdate) updateDialog.showModal(); });
+  document.body.append(updateDialog); updateDialog.showModal(); action.focus();
+}
+
+let serviceWorkerRegistration = null;
+let lastUpdateCheck = 0;
+function checkForUpdate() {
+  if (!serviceWorkerRegistration || !navigator.onLine || Date.now() - lastUpdateCheck < 60000) return;
+  lastUpdateCheck = Date.now();
+  serviceWorkerRegistration.update().catch(() => {});
 }
 
 async function registerWorker() {
@@ -71,7 +104,10 @@ async function registerWorker() {
   try {
     const registration = await navigator.serviceWorker.register("./sw.js?release=cloud-3", { scope: "./", updateViaCache: "none" });
     await navigator.serviceWorker.ready;
+    serviceWorkerRegistration = registration;
     waitingWorker = registration.waiting;
+    if (waitingWorker && navigator.serviceWorker.controller) offerUpdate();
+    setInterval(checkForUpdate, 30 * 60000);
     offlineStatus.textContent = navigator.serviceWorker.controller ? "Ready offline" : "Reload once for offline";
     navigator.serviceWorker.addEventListener("controllerchange", () => { offlineStatus.textContent = "Ready offline"; if (reloadForUpdate) location.reload(); });
     registration.addEventListener("updatefound", () => {
@@ -132,6 +168,7 @@ async function acceptCode(detection) {
     } finally {
       confirmationOpen = false;
       window.dispatchEvent(new Event("sessionchange"));
+      offerUpdate();
       if ((resumeScanAfterConfirmation || scannerPausedForFallback) && !document.hidden) { resumeScanAfterConfirmation = false; renderRoute(); }
     }
   } catch (error) {
@@ -193,6 +230,7 @@ async function checkBackupReminder() {
 }
 
 const handleVisibilityChange = () => {
+  if (!document.hidden) checkForUpdate();
   if (!appAuthenticated) return;
   if (document.hidden) { if (activeRoute === "scan") { cleanup?.(); if (confirmationOpen) resumeScanAfterConfirmation = true; } }
   else if (activeRoute === "scan") { if (confirmationOpen) resumeScanAfterConfirmation = true; else renderRoute(); }
