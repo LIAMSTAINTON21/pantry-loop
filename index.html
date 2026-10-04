@@ -24,10 +24,15 @@
         <p class="eyebrow">PANTRY LOOP</p>
         <p id="page-title" class="page-title">Scan</p>
       </div>
-      <div class="status-cluster" aria-live="polite">
-        <span id="network-status" class="status-chip">Checking connection</span>
-        <span id="offline-status" class="status-chip">Offline setup pending</span>
-        <span id="sync-status" class="status-chip">Local sync pending</span>
+      <div class="status-wrap">
+        <button type="button" id="status-summary" class="status-summary" aria-expanded="false" aria-controls="status-panel">
+          <span class="status-dot" aria-hidden="true"></span><span id="status-label" aria-live="polite">Starting</span>
+        </button>
+        <div id="status-panel" class="status-cluster" hidden>
+          <span id="network-status" class="status-chip">Checking connection</span>
+          <span id="offline-status" class="status-chip">Offline setup pending</span>
+          <span id="sync-status" class="status-chip">Local sync pending</span>
+        </div>
       </div>
     </header>
 

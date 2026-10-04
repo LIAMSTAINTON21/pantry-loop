@@ -3,6 +3,7 @@ import { requireAuthentication } from "./auth.js";
 import { startSynchronization, synchronizeNow } from "./sync.js";
 import { showScanConfirmation } from "./confirmation.js";
 import { el } from "./ui.js";
+import { icon } from "./icons.js";
 import { showIdentificationFallback } from "./identification.js";
 import { identifyBarcode, processLookupQueue } from "./lookup.js";
 import { renderScan } from "./views/scan.js";
@@ -50,6 +51,27 @@ async function editSessionRow(key, nextQty) {
   window.dispatchEvent(new Event("sessionchange"));
 }
 
+// One header indicator instead of three chips; the full detail stays available in the status panel.
+const statusSummary = document.querySelector("#status-summary");
+const statusPanel = document.querySelector("#status-panel");
+function updateStatusSummary() {
+  const sync = syncStatus.textContent; const offline = !navigator.onLine;
+  const [state, label] = offline ? ["offline", "Offline"]
+    : sync === "Syncing…" ? ["busy", "Syncing"]
+    : sync === "Sync unavailable" ? ["warn", "Sync issue"]
+    : sync === "Cloud synced" ? ["ok", "Synced"] : ["busy", "Starting"];
+  statusSummary.dataset.state = state;
+  const labelNode = document.querySelector("#status-label");
+  if (labelNode.textContent !== label) labelNode.textContent = label; // live region: only announce real changes
+  statusSummary.setAttribute("aria-label", `Status: ${label}. Show details`);
+}
+new MutationObserver(updateStatusSummary).observe(statusPanel, { subtree: true, characterData: true, childList: true });
+const setStatusOpen = open => { statusPanel.hidden = !open; statusSummary.setAttribute("aria-expanded", String(open)); };
+statusSummary.addEventListener("click", event => { event.stopPropagation(); setStatusOpen(statusPanel.hidden); });
+document.addEventListener("click", event => { if (!statusPanel.hidden && !statusPanel.contains(event.target)) setStatusOpen(false); });
+document.addEventListener("keydown", event => { if (event.key === "Escape" && !statusPanel.hidden) { setStatusOpen(false); statusSummary.focus(); } });
+for (const link of document.querySelectorAll(".bottom-nav a")) link.querySelector("span[aria-hidden]")?.replaceWith(icon(link.dataset.route));
+
 function toast(message, { error = false, action = null, actionLabel = "Undo", duration = 10000 } = {}) {
   toastRegion.replaceChildren();
   const node = document.createElement("div"); node.className = `toast${error ? " error" : ""}`;
@@ -59,7 +81,7 @@ function toast(message, { error = false, action = null, actionLabel = "Undo", du
 }
 
 function updateNetwork() {
-  networkStatus.textContent = navigator.onLine ? "Online" : "Offline";
+  networkStatus.textContent = navigator.onLine ? "Online" : "Offline"; updateStatusSummary();
   if (appAuthenticated && navigator.onLine) processLookupQueue();
 }
 
@@ -190,6 +212,7 @@ async function identifyWithoutBarcode() {
 async function renderRoute() {
   if (!appAuthenticated) return;
   cleanup?.(); cleanup = null;
+  const previousRoute = activeRoute;
   const route = location.hash.slice(1) || "scan"; activeRoute = views[route] ? route : "scan";
   document.querySelectorAll(".bottom-nav a").forEach(link => { if (link.dataset.route === activeRoute) link.setAttribute("aria-current", "page"); else link.removeAttribute("aria-current"); });
   title.textContent = labels[activeRoute];
@@ -213,6 +236,7 @@ async function renderRoute() {
   };
   try {
     const rendered = await views[activeRoute](context); app.replaceChildren(rendered.root); cleanup = rendered.cleanup ?? null; app.focus({ preventScroll: true });
+    if (previousRoute !== activeRoute) { window.scrollTo(0, 0); app.classList.remove("route-enter"); void app.offsetWidth; app.classList.add("route-enter"); }
   } catch (error) {
     const heading = document.createElement("h1"); heading.textContent = "This view couldn’t open."; const detail = document.createElement("p"); detail.className = "callout error"; detail.textContent = error.message; app.replaceChildren(heading, detail); console.error(error);
   }

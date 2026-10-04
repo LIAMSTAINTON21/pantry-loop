@@ -1,8 +1,8 @@
-const CACHE = "pantry-loop-v1.5.0-supabase-7";
+const CACHE = "pantry-loop-v1.6.0-supabase-8";
 const ASSETS = [
   "./src/bootstrap.js?release=cloud-3",
   "./", "./index.html", "./app.css", "./manifest.webmanifest",
-  "./src/main.js", "./src/ui.js", "./src/auth.js", "./src/supabase-config.js", "./src/sync.js", "./src/tesco.js", "./src/confirmation.js", "./src/identification.js", "./src/db.js", "./src/barcode.js", "./src/inventory.js", "./src/scanner.js", "./src/lookup.js", "./src/list.js", "./src/export.js",
+  "./src/main.js", "./src/ui.js", "./src/icons.js", "./src/sheet.js", "./src/auth.js", "./src/supabase-config.js", "./src/sync.js", "./src/tesco.js", "./src/confirmation.js", "./src/identification.js", "./src/db.js", "./src/barcode.js", "./src/inventory.js", "./src/scanner.js", "./src/lookup.js", "./src/list.js", "./src/export.js",
   "./src/views/scan.js", "./src/views/stock.js", "./src/views/list.js", "./src/views/catalogue.js", "./src/views/settings.js",
   "./vendor/idb-8.0.3.umd.js", "./vendor/zxing-wasm-reader-3.1.4.js", "./vendor/zxing_reader-3.1.4.wasm", "./vendor/xlsx-0.20.3.full.min.js", "./vendor/supabase-2.117.2.js",
   "./icons/icon-192.png", "./icons/icon-512.png", "./icons/icon-maskable-512.png"
