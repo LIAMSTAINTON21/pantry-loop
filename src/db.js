@@ -6,21 +6,41 @@ const DB_NAME = "pantry-loop-data";
 const STORES = ["products", "purchases", "depletions", "meta"];
 let databasePromise;
 let generation = 0;
+let dataChangeVersion = 0;
+let changeChannel = null;
+
+function ensureChangeChannel() {
+  if (changeChannel || typeof window === "undefined" || typeof BroadcastChannel === "undefined") return changeChannel;
+  changeChannel = new BroadcastChannel("pantry-loop-data-changes");
+  changeChannel.addEventListener("message", () => {
+    dataChangeVersion += 1;
+    window.dispatchEvent(new Event("pantry:data-changed"));
+  });
+  return changeChannel;
+}
+
+function notifyDataChanged() {
+  dataChangeVersion += 1;
+  if (typeof window !== "undefined") {
+    ensureChangeChannel()?.postMessage({ changed: true });
+    window.dispatchEvent(new Event("pantry:data-changed"));
+  }
+}
 
 const defaultSettings = {
   timezone: "Europe/London",
   categoryOrder: ["Fruit & veg", "Bakery", "Dairy", "Meat & fish", "Cupboard", "Frozen", "Household"],
   planningHorizonDays: 7,
   onlineLookup: true,
-  catalogueProxyUrl: "",
-  visionProxyUrl: "",
   lastMode: "buy",
   forceFallback: false
 };
 
 export function getDatabaseGeneration() { return generation; }
+export function getDataChangeVersion() { return dataChangeVersion; }
 
 export async function openDatabase() {
+  ensureChangeChannel();
   databasePromise ??= globalThis.idb.openDB(DB_NAME, SCHEMA_VERSION, {
     upgrade(db) {
       const products = db.createObjectStore("products", { keyPath: "barcode" });
@@ -52,6 +72,7 @@ export async function getMeta(key, fallback = null) {
 export async function setMeta(key, value) {
   const db = await openDatabase();
   await db.put("meta", { key, value });
+  notifyDataChanged();
   return value;
 }
 
@@ -60,7 +81,7 @@ export async function getSettings() {
 }
 
 export async function updateSettings(patch) {
-  const settings = { ...(await getSettings()), ...patch };
+  const settings = { ...(await getSettings()), ...patch, updatedAt: new Date().toISOString() };
   await setMeta("settings", settings);
   return settings;
 }
@@ -72,13 +93,14 @@ export function localDate(timezone = "Europe/London", date = new Date()) {
 }
 
 export function newProduct(barcode, barcodeFormat, name = null) {
+  const createdAt = new Date().toISOString();
   return {
     barcode, barcodeFormat,
     name: name || `Unknown item · ${barcode.replace(/^code128:/, "")}`,
     brand: null, size: null, price: null, currency: "GBP", imageUrl: null, category: null, userEditedFields: name ? ["name"] : [],
     lookup: { state: barcodeFormat === "manual" || barcode.startsWith("code128:") ? "manual" : "pending", source: null, checkedAt: null, nextRetryAt: null },
     onHandQty: null, status: "unknown", isStaple: false, staplePeriodDays: null,
-    defaultQty: 1, snoozeUntil: null, neverSuggest: false, createdAt: new Date().toISOString()
+    defaultQty: 1, snoozeUntil: null, neverSuggest: false, createdAt, updatedAt: createdAt
   };
 }
 
@@ -114,15 +136,16 @@ export async function recordEvent({ type, barcode, barcodeFormat, qty = 1, sourc
     ? { ...common, purchasedAt: now, purchasedOn: localDate(settings.timezone), source, listId, clearedSnoozeUntil: product.snoozeUntil ?? null }
     : { ...common, finishedAt: now };
   await eventStore.add(event);
-  if (type === "purchase" && product.snoozeUntil) await productStore.put({ ...product, snoozeUntil: null });
+  if (type === "purchase" && product.snoozeUntil) await productStore.put({ ...product, snoozeUntil: null, updatedAt: now });
   if (type === "purchase" && listId) {
     const draftRow = await tx.objectStore("meta").get("shoppingDraft");
     if (draftRow?.value?.id === listId && !draftRow.value.completedAt) {
-      await tx.objectStore("meta").put({ key: "shoppingDraft", value: { ...draftRow.value, lastLinkedPurchaseAt: now } });
+      await tx.objectStore("meta").put({ key: "shoppingDraft", value: { ...draftRow.value, lastLinkedPurchaseAt: now, updatedAt: now } });
     }
   }
   await updateStockInTransaction(tx, barcode);
   await tx.done;
+  notifyDataChanged();
   return { event, duplicate: false, product: await db.get("products", barcode) };
 }
 
@@ -136,9 +159,9 @@ export async function voidEvent(storeName, id) {
   if (storeName === "purchases" && event.clearedSnoozeUntil) {
     const later = (await store.index("barcode").getAll(event.barcode)).some(item => !item.voidedAt && item.seq > event.seq);
     const product = await tx.objectStore("products").get(event.barcode);
-    if (!later && product?.snoozeUntil === null) await tx.objectStore("products").put({ ...product, snoozeUntil: event.clearedSnoozeUntil });
+    if (!later && product?.snoozeUntil === null) await tx.objectStore("products").put({ ...product, snoozeUntil: event.clearedSnoozeUntil, updatedAt: new Date().toISOString() });
   }
-  await updateStockInTransaction(tx, event.barcode); await tx.done; return true;
+  await updateStockInTransaction(tx, event.barcode); await tx.done; notifyDataChanged(); return true;
 }
 
 export async function correctEvent(storeName, id, qty) {
@@ -149,7 +172,7 @@ export async function correctEvent(storeName, id, qty) {
   if (!original || original.voidedAt) throw new Error("That event is no longer active");
   const voidedAt = new Date().toISOString(); const replacement = { ...original, id: crypto.randomUUID(), qty, replacesId: original.id, voidedAt: null };
   await store.put({ ...original, voidedAt }); await store.add(replacement); await updateStockInTransaction(tx, original.barcode); await tx.done;
-  return replacement;
+  notifyDataChanged(); return replacement;
 }
 
 export async function undoCorrection(storeName, replacementId) {
@@ -162,15 +185,15 @@ export async function undoCorrection(storeName, replacementId) {
   if (!original) throw new Error("Original event is missing");
   await store.put({ ...replacement, voidedAt: new Date().toISOString() });
   await store.put({ ...original, voidedAt: null });
-  await updateStockInTransaction(tx, replacement.barcode); await tx.done; return true;
+  await updateStockInTransaction(tx, replacement.barcode); await tx.done; notifyDataChanged(); return true;
 }
 
 export async function saveProduct(barcode, patch, userFields = []) {
   const db = await openDatabase(); const product = await db.get("products", barcode);
   if (!product) throw new Error("Product not found");
   const userEditedFields = [...new Set([...(product.userEditedFields ?? []), ...userFields])];
-  const updated = { ...product, ...patch, userEditedFields };
-  await db.put("products", updated); return updated;
+  const updated = { ...product, ...patch, userEditedFields, updatedAt: new Date().toISOString() };
+  await db.put("products", updated); notifyDataChanged(); return updated;
 }
 
 export async function getState() {
@@ -188,9 +211,17 @@ export async function getRecentActivity(limit = 30) {
     .sort((a, b) => b.seq - a.seq).slice(0, limit).map(event => ({ ...event, name: names.get(event.barcode) ?? event.barcode }));
 }
 
-export async function replaceAll(validated) {
+export async function replaceAll(validated, { notify = true, expectedVersion = null } = {}) {
   const db = await openDatabase(); generation += 1;
   const tx = db.transaction(STORES, "readwrite");
+  // This first request runs only after earlier read/write transactions have
+  // finished. Recheck while holding the transaction so an in-flight local edit
+  // cannot be cleared by the snapshot captured before the network round-trip.
+  await tx.objectStore("meta").get("schemaVersion");
+  if (expectedVersion !== null && dataChangeVersion !== expectedVersion) {
+    tx.abort(); try { await tx.done; } catch { /* intentional abort */ }
+    return false;
+  }
   for (const name of STORES) await tx.objectStore(name).clear();
   for (const product of validated.products) await tx.objectStore("products").put(product);
   for (const event of validated.purchases) await tx.objectStore("purchases").put(event);
@@ -201,6 +232,15 @@ export async function replaceAll(validated) {
   await tx.objectStore("meta").put({ key: "nextSeq", value: maxSeq + 1 });
   for (const product of validated.products) await updateStockInTransaction(tx, product.barcode);
   await tx.done;
+  if (notify) notifyDataChanged();
+  return true;
+}
+
+export async function clearLocalData() {
+  const db = await databasePromise;
+  db?.close(); databasePromise = null; generation += 1;
+  await globalThis.idb.deleteDB(DB_NAME);
+  dataChangeVersion += 1;
 }
 
 export async function logCheckedDraft(draft) {
@@ -222,7 +262,7 @@ export async function logCheckedDraft(draft) {
   }
   await metaStore.put({ key: "nextSeq", value: nextSeq });
   const completedAt = new Date().toISOString();
-  await metaStore.put({ key: "shoppingDraft", value: { ...draft, completedAt, completionMode: "manual" } });
+  await metaStore.put({ key: "shoppingDraft", value: { ...draft, completedAt, updatedAt: completedAt, completionMode: "manual" } });
   await metaStore.put({ key: "lastCompletedShopAt", value: completedAt });
-  await tx.done; return { alreadyCompleted: false, count };
+  await tx.done; notifyDataChanged(); return { alreadyCompleted: false, count };
 }

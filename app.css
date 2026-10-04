@@ -15,6 +15,7 @@
 }
 
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 html { background: var(--bg); }
 body { margin: 0; min-height: 100vh; background: radial-gradient(circle at 80% -10%, #2d4a31 0, var(--bg) 38%); color: var(--text); }
 button, input, select, textarea { font: inherit; }
@@ -28,6 +29,14 @@ a { color: inherit; }
 .page-title { margin: 2px 0 0; font-size: 1.35rem; font-weight: 780; }
 .status-cluster { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 5px; max-width: 55%; }
 .status-chip { min-height: 26px; display: inline-flex; align-items: center; padding: 4px 8px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); font-size: .7rem; }
+.auth-logout { background: transparent; cursor: pointer; }
+.auth-screen { min-height: 100dvh; display: grid; place-items: center; padding: max(24px, env(safe-area-inset-top)) 16px max(24px, env(safe-area-inset-bottom)); }
+.auth-card { width: min(440px, 100%); display: grid; gap: 16px; padding: clamp(22px, 6vw, 34px); border: 1px solid var(--line); border-radius: 22px; background: color-mix(in srgb, var(--surface) 96%, transparent); box-shadow: 0 24px 70px #0006; }
+.auth-card h1 { margin-bottom: 0; }
+.auth-copy { margin: 0 0 4px; color: var(--muted); line-height: 1.55; }
+.auth-status { min-height: 22px; margin: 0; color: var(--muted); font-size: .86rem; line-height: 1.45; }
+.auth-status.error { color: #ffb4a8; }
+.auth-checking { min-height: 150px; place-items: center; color: var(--muted); }
 main { width: min(760px, 100%); min-height: calc(100vh - 150px); margin: 0 auto; padding: 18px 16px 110px; }
 .bottom-nav { position: fixed; z-index: 20; inset: auto 0 0; display: grid; grid-template-columns: repeat(4, 1fr); padding: 7px max(8px, env(safe-area-inset-right)) max(7px, env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left)); background: color-mix(in srgb, #121a15 96%, transparent); border-top: 1px solid var(--line); }
 .bottom-nav a { display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 2px; text-decoration: none; color: var(--muted); border-radius: 12px; font-size: .76rem; font-weight: 700; }
@@ -45,6 +54,14 @@ h2 { margin: 26px 0 10px; font-size: 1.05rem; }
 .primary, .secondary, .danger, .ghost { min-height: 50px; padding: 0 17px; border-radius: 14px; font-weight: 800; }
 .primary { background: var(--accent); color: var(--accent-ink); }
 .secondary { background: var(--surface-2); color: var(--text); border: 1px solid var(--line); }
+.tesco-export { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
+.export-warning { padding: 14px; border: 1px solid #d5a73c; border-radius: 14px; background: color-mix(in srgb, #d5a73c 12%, var(--surface)); }
+.export-warning p { margin: 0; }
+.tesco-progress-list { display: grid; gap: 7px; margin: 0; padding: 0; list-style: none; }
+.tesco-progress-list li { display: flex; justify-content: space-between; gap: 12px; padding: 10px 12px; border-radius: 12px; background: var(--surface-2); }
+.tesco-progress-list li.is-added { box-shadow: inset 4px 0 var(--accent); }
+.tesco-progress-list li.is-skipped { opacity: .62; text-decoration: line-through; }
+.tesco-next { padding-top: 4px; }
 .danger { background: #48251f; color: #ffd8d1; border: 1px solid #744039; }
 .ghost { background: transparent; color: var(--muted); border: 1px solid var(--line); }
 button:disabled { opacity: .5; cursor: not-allowed; }

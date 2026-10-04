@@ -62,12 +62,17 @@ export function validateBackup(data) {
       }
     }
   }
-  return { products: structuredClone(data.products), purchases: structuredClone(data.purchases), depletions: structuredClone(data.depletions), meta: structuredClone(data.meta) };
+  const meta = structuredClone(data.meta).map(row => {
+    if (row.key !== "settings" || !row.value || typeof row.value !== "object") return row;
+    const { catalogueProxyUrl: _catalogue, visionProxyUrl: _vision, ...safeSettings } = row.value;
+    return { ...row, value: safeSettings };
+  });
+  return { products: structuredClone(data.products), purchases: structuredClone(data.purchases), depletions: structuredClone(data.depletions), meta };
 }
 
 export async function buildBackup() {
   const state = await getState();
-  return { appId: APP_ID, schemaVersion: SCHEMA_VERSION, exportedAt: new Date().toISOString(), ...state };
+  return { appId: APP_ID, schemaVersion: SCHEMA_VERSION, exportedAt: new Date().toISOString(), ...validateBackup({ appId: APP_ID, schemaVersion: SCHEMA_VERSION, ...state }) };
 }
 
 function download(blob, filename) {
@@ -117,4 +122,8 @@ export async function readBackupFile(file) {
   return validateBackup(data);
 }
 
-export async function restoreBackup(validated) { await replaceAll(validated); }
+export async function restoreBackup(validated) {
+  await replaceAll(validated);
+  await setMeta("cloudResetAt", new Date().toISOString());
+  await setMeta("cloudReplacePending", true);
+}

@@ -1,0 +1,4 @@
+[functions.identify-product]
+# The handler validates the bearer token with Auth /user and checks the owner email.
+# Legacy gateway verification does not support the project's new signing keys.
+verify_jwt = false

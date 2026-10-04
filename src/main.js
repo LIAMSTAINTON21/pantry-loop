@@ -1,4 +1,6 @@
 import { getMeta, getSettings, localDate, openDatabase, recordEvent, saveProduct, setMeta, updateSettings, voidEvent } from "./db.js";
+import { requireAuthentication } from "./auth.js";
+import { startSynchronization, synchronizeNow } from "./sync.js";
 import { showScanConfirmation } from "./confirmation.js";
 import { showIdentificationFallback } from "./identification.js";
 import { identifyBarcode, processLookupQueue } from "./lookup.js";
@@ -12,6 +14,7 @@ const title = document.querySelector("#page-title");
 const toastRegion = document.querySelector("#toast-region");
 const networkStatus = document.querySelector("#network-status");
 const offlineStatus = document.querySelector("#offline-status");
+const syncStatus = document.querySelector("#sync-status");
 const views = { scan: renderScan, list: renderList, catalogue: renderCatalogue, settings: renderSettings };
 const labels = { scan: "Scan", list: "Shopping list", catalogue: "Catalogue", settings: "Settings" };
 let cleanup = null;
@@ -22,6 +25,7 @@ let waitingWorker = null;
 let reloadForUpdate = false;
 let confirmationOpen = false;
 let resumeScanAfterConfirmation = false;
+let appAuthenticated = false;
 const sessionId = crypto.randomUUID();
 const sessionRows = new Map();
 
@@ -35,9 +39,8 @@ function toast(message, { error = false, action = null, actionLabel = "Undo", du
 
 function updateNetwork() {
   networkStatus.textContent = navigator.onLine ? "Online" : "Offline";
-  if (navigator.onLine) processLookupQueue();
+  if (appAuthenticated && navigator.onLine) processLookupQueue();
 }
-window.addEventListener("online", updateNetwork); window.addEventListener("offline", updateNetwork); updateNetwork();
 
 function offerUpdate() {
   if (!waitingWorker || activeRoute === "scan" || savingBlocked) return;
@@ -120,6 +123,7 @@ async function identifyWithoutBarcode() {
 }
 
 async function renderRoute() {
+  if (!appAuthenticated) return;
   cleanup?.(); cleanup = null;
   const route = location.hash.slice(1) || "scan"; activeRoute = views[route] ? route : "scan";
   document.querySelectorAll(".bottom-nav a").forEach(link => link.toggleAttribute("aria-current", link.dataset.route === activeRoute));
@@ -135,7 +139,7 @@ async function renderRoute() {
     finishScanDraft: async () => {
       if (activeDraft?.scanningActive && !activeDraft.completedAt) {
         const completedAt = new Date().toISOString();
-        await setMeta("shoppingDraft", { ...activeDraft, scanningActive: false, completedAt, completionMode: "scan" });
+        await setMeta("shoppingDraft", { ...activeDraft, scanningActive: false, completedAt, updatedAt: completedAt, completionMode: "scan" });
         await setMeta("lastCompletedShopAt", completedAt); backupReminderShown = false;
       }
     },
@@ -160,15 +164,44 @@ async function checkBackupReminder() {
   }
 }
 
-window.addEventListener("hashchange", renderRoute);
-document.addEventListener("visibilitychange", () => {
+const handleVisibilityChange = () => {
+  if (!appAuthenticated) return;
   if (document.hidden) { if (activeRoute === "scan") { cleanup?.(); if (confirmationOpen) resumeScanAfterConfirmation = true; } }
   else if (activeRoute === "scan") { if (confirmationOpen) resumeScanAfterConfirmation = true; else renderRoute(); }
-});
+};
 window.addEventListener("dbblocked", () => toast("Close other Pantry Loop tabs to finish the update", { error: true, duration: 0 }));
 
+let stopSynchronization = async () => {};
+let prepareLogout = async () => false;
+const stopAppActivity = async () => {
+  if (!appAuthenticated) return;
+  appAuthenticated = false;
+  window.removeEventListener("online", updateNetwork); window.removeEventListener("offline", updateNetwork);
+  window.removeEventListener("hashchange", renderRoute);
+  document.removeEventListener("visibilitychange", handleVisibilityChange);
+  await stopSynchronization(); cleanup?.();
+};
+window.addEventListener("pantrylogout", stopAppActivity);
+await requireAuthentication({ beforeLogout: () => prepareLogout() });
+appAuthenticated = true;
+window.addEventListener("online", updateNetwork); window.addEventListener("offline", updateNetwork); updateNetwork();
+window.addEventListener("hashchange", renderRoute);
+document.addEventListener("visibilitychange", handleVisibilityChange);
 await openDatabase();
+let initialSyncError = null;
+try { await synchronizeNow(); syncStatus.textContent = "Cloud synced"; }
+catch (error) { initialSyncError = error; syncStatus.textContent = "Sync unavailable"; }
+stopSynchronization = startSynchronization({ onStatus: (status, error) => {
+  syncStatus.textContent = status === "syncing" ? "Syncing…" : status === "synced" ? "Cloud synced" : "Sync unavailable";
+  if (status === "error") console.warn("Cloud synchronization failed", error);
+} });
+prepareLogout = async () => {
+  await stopAppActivity();
+  try { await synchronizeNow(); return true; }
+  catch (error) { console.warn("Local data retained because final synchronization failed", error); return false; }
+};
 await setMeta("activeSession", { id: sessionId, startedAt: new Date().toISOString(), mode: (await getSettings()).lastMode });
 await registerWorker();
 await renderRoute();
+if (initialSyncError) toast("Signed in, but cloud synchronization is temporarily unavailable", { error: true });
 processLookupQueue();

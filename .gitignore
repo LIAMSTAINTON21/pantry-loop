@@ -1,0 +1,7 @@
+.env
+.env.*
+!.env.example
+server/data/
+.playwright-cli/
+node_modules/
+output/

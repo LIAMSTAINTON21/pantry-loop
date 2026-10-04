@@ -12,15 +12,7 @@ export async function renderSettings(context) {
   preferences.append(el("label", { class: "row" }, [online, document.createTextNode("Online product details (barcode only)")]), el("label", { class: "row" }, [fallback, document.createTextNode("Force offline scanner fallback")]), field("Shopping timezone", timezone), button("Save preferences", "secondary", async () => { await updateSettings({ onlineLookup: online.checked, forceFallback: fallback.checked, timezone: timezone.value.trim() || "Europe/London" }); context.toast("Preferences saved"); }));
   root.append(preferences);
 
-  const integrations = el("section", { class: "card stack" }, [el("h2", { text: "Product identification" }), el("p", { class: "meta", text: "Use HTTPS proxy endpoints that keep Tesco/Pepesto and Vision API keys on a server. Never paste an API key here." })]);
-  const catalogueProxyUrl = el("input", { type: "url", value: settings.catalogueProxyUrl ?? "", placeholder: "https://your-proxy.example/tesco-product" });
-  const visionProxyUrl = el("input", { type: "url", value: settings.visionProxyUrl ?? "", placeholder: "https://your-proxy.example/identify-product" });
-  integrations.append(field("Tesco catalogue proxy URL", catalogueProxyUrl), field("Vision identification proxy URL", visionProxyUrl), el("p", { class: "meta", text: "Without a Tesco proxy, barcode lookup uses Open Food Facts. Without a Vision proxy, the photo option moves safely to manual entry." }), button("Save integrations", "secondary", async () => {
-    const validate = value => { const clean = value.trim(); if (!clean) return ""; const url = new URL(clean); if (url.protocol !== "https:" && url.hostname !== "localhost") throw new Error("Proxy URLs must use HTTPS"); return url.href; };
-    try { await updateSettings({ catalogueProxyUrl: validate(catalogueProxyUrl.value), visionProxyUrl: validate(visionProxyUrl.value) }); context.toast("Integration settings saved"); }
-    catch (error) { context.toast(error.message, { error: true }); }
-  }));
-  root.append(integrations);
+  root.append(el("section", { class: "card stack" }, [el("h2", { text: "Product identification" }), el("p", { class: "meta", text: "Product photos use the signed-in app’s protected AI service. API keys and service addresses cannot be entered or exported from this screen." })]));
 
   const storage = el("section", { class: "card stack" }, [el("h2", { text: "Device storage" })]);
   const persisted = navigator.storage?.persisted ? await navigator.storage.persisted() : false;
@@ -48,6 +40,6 @@ export async function renderSettings(context) {
     }
     root.append(card);
   }
-  root.append(el("section", { class: "card stack" }, [el("h2", { text: "About" }), el("p", { class: "meta", text: `Pantry Loop 1.2.2 · ${state.products.length} products · Barcode details use your Tesco proxy or Open Food Facts. Product photos are uploaded only when you deliberately take one and a Vision proxy is configured.` })]));
+  root.append(el("section", { class: "card stack" }, [el("h2", { text: "About" }), el("p", { class: "meta", text: `Pantry Loop 1.3.0-local · ${state.products.length} products · Barcode details use Open Food Facts. Product photos are uploaded only when you deliberately take one while signed in.` })]));
   return { root };
 }

@@ -4,6 +4,8 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
     <meta name="theme-color" content="#101612">
+    <meta name="referrer" content="no-referrer">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; base-uri 'self'; object-src 'none'; form-action 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; connect-src 'self' https://*.supabase.co https://world.openfoodfacts.org; img-src 'self' data: blob: https://images.openfoodfacts.org; media-src 'self' blob:; worker-src 'self'; manifest-src 'self'; upgrade-insecure-requests">
     <meta name="description" content="A fast, offline-first personal grocery tracker.">
     <link rel="manifest" href="./manifest.webmanifest">
     <link rel="icon" href="./icons/icon-192.png">
@@ -11,8 +13,13 @@
     <title>Pantry Loop</title>
   </head>
   <body>
-    <a class="skip-link" href="#app">Skip to content</a>
-    <header class="topbar">
+    <div id="auth-root" aria-live="polite">
+      <section class="auth-screen" aria-label="Checking sign-in">
+        <div class="auth-card auth-checking">Checking sign-in…</div>
+      </section>
+    </div>
+    <a class="skip-link" href="#app" data-auth-protected hidden inert aria-hidden="true">Skip to content</a>
+    <header class="topbar" data-auth-protected hidden inert aria-hidden="true">
       <div>
         <p class="eyebrow">PANTRY LOOP</p>
         <p id="page-title" class="page-title">Scan</p>
@@ -20,27 +27,29 @@
       <div class="status-cluster" aria-live="polite">
         <span id="network-status" class="status-chip">Checking connection</span>
         <span id="offline-status" class="status-chip">Offline setup pending</span>
+        <span id="sync-status" class="status-chip">Local sync pending</span>
       </div>
     </header>
 
-    <main id="app" tabindex="-1" aria-live="polite">
+    <main id="app" tabindex="-1" aria-live="polite" data-auth-protected hidden inert aria-hidden="true">
       <section class="loading-card">
         <span class="spinner" aria-hidden="true"></span>
         <p>Opening your catalogue…</p>
       </section>
     </main>
 
-    <nav class="bottom-nav" aria-label="Primary">
+    <nav class="bottom-nav" aria-label="Primary" data-auth-protected hidden inert aria-hidden="true">
       <a href="#scan" data-route="scan"><span aria-hidden="true">▣</span>Scan</a>
       <a href="#list" data-route="list"><span aria-hidden="true">✓</span>List</a>
       <a href="#catalogue" data-route="catalogue"><span aria-hidden="true">▤</span>Catalogue</a>
       <a href="#settings" data-route="settings"><span aria-hidden="true">⚙</span>Settings</a>
     </nav>
 
-    <div id="toast-region" class="toast-region" aria-live="assertive" aria-atomic="true"></div>
+    <div id="toast-region" class="toast-region" aria-live="assertive" aria-atomic="true" data-auth-protected hidden inert aria-hidden="true"></div>
     <script src="./vendor/idb-8.0.3.umd.js"></script>
     <script src="./vendor/zxing-wasm-reader-3.1.4.js"></script>
     <script src="./vendor/xlsx-0.20.3.full.min.js"></script>
+    <script src="./vendor/supabase-2.117.2.js"></script>
     <script type="module" src="./src/main.js"></script>
   </body>
 </html>

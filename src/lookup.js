@@ -60,17 +60,6 @@ export async function identifyBarcode(barcode, settings = null) {
     return { match: { name: local.name, brand: local.brand, size: local.size, price: local.price, currency: local.currency, imageUrl: local.imageUrl, category: local.category, source: local.lookup.source ?? "Saved on this device" }, provider: "local" };
   }
   if (!settings.onlineLookup || !canLookup(barcode) || !navigator.onLine) return { match: null, reason: navigator.onLine ? "disabled" : "offline" };
-  if (settings.catalogueProxyUrl) {
-    try {
-      const data = await fetchJson(settings.catalogueProxyUrl, {
-        method: "POST", headers: { "Content-Type": "application/json", Accept: "application/json" },
-        body: JSON.stringify({ barcode, retailer: "tesco-gb" })
-      });
-      const match = catalogueAdapter(data);
-      if (match) return { match, provider: "tesco" };
-      return { match: null, reason: "not-found", provider: "tesco" };
-    } catch (error) { return { match: null, reason: error.name === "AbortError" ? "timeout" : "error", provider: "tesco", error }; }
-  }
   try {
     const fields = "code,product_name,product_name_en,brands,quantity,categories,image_front_url";
     const data = await fetchJson(`${API}${encodeURIComponent(barcode)}?product_type=all&fields=${fields}`, { headers: { Accept: "application/json" } });
