@@ -50,7 +50,7 @@ function offerUpdate() {
 async function registerWorker() {
   if (!("serviceWorker" in navigator)) { offlineStatus.textContent = "Offline unavailable"; return; }
   try {
-    const registration = await navigator.serviceWorker.register("./sw.js", { scope: "./" });
+    const registration = await navigator.serviceWorker.register("./sw.js?release=cloud-3", { scope: "./", updateViaCache: "none" });
     await navigator.serviceWorker.ready;
     waitingWorker = registration.waiting;
     offlineStatus.textContent = navigator.serviceWorker.controller ? "Ready offline" : "Reload once for offline";
