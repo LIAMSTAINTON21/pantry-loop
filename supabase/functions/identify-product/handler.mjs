@@ -5,6 +5,8 @@ import {
   parseImageDataUrl, validateProduct
 } from "../_shared/product-identification.mjs";
 
+// Keep parsing, account checks, quota accounting, provider calls, and output
+// validation in a framework-light handler that can be exercised in tests.
 const json = (body, status = 200, headers = {}) => new Response(JSON.stringify(body), {
   status,
   headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store", ...headers }
@@ -56,6 +58,8 @@ export function createProductIdentificationHandler({ env, fetchImpl = fetch }) {
   const allowedOrigin = String(env.ALLOWED_ORIGIN ?? "").trim().replace(/\/$/, "");
 
   return async function handle(request) {
+    // Origin checks are a browser boundary; verifying the Supabase user below
+    // is the separate account boundary before accepting an image.
     const origin = request.headers.get("origin");
     const cors = corsHeaders(origin, allowedOrigin);
     if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: cors });
@@ -90,6 +94,9 @@ export function createProductIdentificationHandler({ env, fetchImpl = fetch }) {
       });
       if (!quotaResponse.ok) throw Object.assign(new Error("Usage accounting failed"), { status: 503, code: "usage_accounting_unavailable" });
       const quota = await quotaResponse.json();
+      // Reserve budget before the paid provider call. If the provider fails
+      // without usable token counts, the reservation stays charged rather than
+      // allowing unmetered retries.
       if (quota?.status === "daily_limit") return json({ error: { code: "daily_scan_limit", message: "Daily scan limit reached" } }, 429, { ...cors, "Retry-After": "86400" });
       if (quota?.status === "monthly_limit") return json({ error: { code: "monthly_cost_limit", message: "Monthly AI cost limit reached" } }, 429, { ...cors, "Retry-After": "86400" });
       if (quota?.status !== "reserved" || !Number.isInteger(quota.scans_remaining) || !Number.isFinite(Number(quota.estimated_cost_gbp))) throw Object.assign(new Error("Usage accounting returned an invalid result"), { status: 503, code: "usage_accounting_unavailable" });

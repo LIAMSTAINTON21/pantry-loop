@@ -1,3 +1,5 @@
+// Assemble the scan screen: camera input and typed barcodes share the same review
+// flow, while session cards refer to individual saved events, not total stock.
 import { normalizeBarcode } from "../barcode.js";
 import { CameraScanner } from "../scanner.js";
 import { el, empty, sectionTitle, button, field } from "../ui.js";
@@ -35,20 +37,28 @@ export async function renderScan(context) {
   const controls = el("div", { class: "row wrap" }); root.append(controls);
 
   let scanner;
+  let disposed = false;
   async function startCamera() {
+    if (disposed || document.hidden) return;
+    scanner?.stop();
+    let candidate;
     message.hidden = false; message.firstChild.textContent = "Opening rear camera…";
     try {
-      scanner = new CameraScanner(video, async detection => acceptCode(detection), (state, error) => {
+      candidate = new CameraScanner(video, async detection => acceptCode(detection), (state, error) => {
+        if (disposed || scanner !== candidate) return;
         if (state === "native" || state === "fallback") { message.hidden = true; toast(`Scanner ready · ${state === "native" ? "phone decoder" : "offline decoder"}`); }
         if (state === "decode-error") console.warn("Decoder error", error);
-      });
-      await scanner.start({ forceFallback: settings.forceFallback });
+        if (state === "accept-error") toast(error.message || "Could not review this scan", { error: true });
+      }, context.scanGate);
+      scanner = candidate;
+      await candidate.start({ forceFallback: settings.forceFallback });
     } catch (error) {
+      if (disposed || scanner !== candidate) return;
       message.hidden = false; message.replaceChildren(el("div", { class: "stack" }, [el("p", { text: error.name === "NotAllowedError" ? "Camera permission was denied. You can retry or enter a code manually." : error.message }), button("Retry camera", "primary", startCamera)]));
     }
   }
   controls.append(button("Enable / retry camera", "secondary", startCamera));
-  controls.append(button("No barcode? Identify product", "primary", async () => { scanner?.stop(); await context.identifyWithoutBarcode(); if (!document.hidden) context.refresh(); }));
+  controls.append(button("No barcode? Identify product", "primary", () => context.identifyWithoutBarcode()));
 
   const manualForm = el("form", { class: "stack manual-form" });
   const code = el("input", { inputmode: "numeric", autocomplete: "off", placeholder: "e.g. 5000112548167", required: "" });
@@ -66,15 +76,33 @@ export async function renderScan(context) {
   root.append(manualEntry);
 
   const session = el("div", { class: "stack" });
+  // Redraw only the session list after edits; restarting the camera here would
+  // throw away its repeat suppression and could count the held barcode again.
   const renderSession = () => {
-    session.replaceChildren(el("h2", { text: "This session" }));
+    session.replaceChildren(el("h2", { text: "This session" }), el("p", { class: "meta", text: "Confirmed scans are saved immediately. Edit an entry, or hold it to remove it." }));
     const events = context.sessionEvents();
     if (!events.length) session.append(empty("Nothing logged yet", "Your saved scans will appear here."));
-    else for (const item of events) session.append(el("article", { class: "session-item" }, [el("div", { class: "row spread" }, [el("p", { class: "item-title", text: item.name }), el("span", { class: "badge", text: `×${item.qty}` })]), el("p", { class: "meta", text: item.message })]));
+    else for (const item of events) {
+      const card = el("article", { class: "session-item" }, [el("div", { class: "row spread" }, [el("p", { class: "item-title", text: item.name }), el("span", { class: "badge", text: `×${item.qty}` })]), el("p", { class: "meta", text: item.message }), el("div", { class: "row wrap" }, [button("Edit quantity / name", "secondary", () => context.editSessionItem(item)), button("× Remove", "danger", () => context.editSessionItem(item, true))])]);
+      let hold = null;
+      let origin = null;
+      const cancelHold = () => { clearTimeout(hold); hold = null; };
+      card.addEventListener("pointerdown", event => {
+        // A moving finger is scrolling, not a request to delete the entry.
+        cancelHold();
+        if (event.button !== 0 || event.target.closest("button")) return;
+        origin = { x: event.clientX, y: event.clientY };
+        hold = setTimeout(() => { if (!disposed && card.isConnected) context.editSessionItem(item, true); }, 600);
+      });
+      card.addEventListener("pointermove", event => { if (origin && Math.hypot(event.clientX - origin.x, event.clientY - origin.y) > 8) cancelHold(); });
+      for (const name of ["pointerup", "pointercancel", "pointerleave"]) card.addEventListener(name, cancelHold);
+      session.append(card);
+    }
+    if (events.length) session.append(button("Finish & view saved stock", "primary", async () => { await context.finishScanDraft(); location.hash = "#stock"; }));
   };
   renderSession(); window.addEventListener("sessionchange", renderSession);
   root.append(session);
 
   startCamera();
-  return { root, cleanup: () => { scanner?.stop(); window.removeEventListener("sessionchange", renderSession); } };
+  return { root, cleanup: () => { disposed = true; scanner?.stop(); window.removeEventListener("sessionchange", renderSession); } };
 }

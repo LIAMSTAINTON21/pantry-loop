@@ -2,6 +2,8 @@ import { exportExcel, exportJson, readBackupFile, restoreBackup } from "../expor
 import { correctEvent, getRecentActivity, getSettings, getState, setMeta, undoCorrection, updateSettings, voidEvent } from "../db.js";
 import { el, empty, sectionTitle, button, field } from "../ui.js";
 
+// This screen brings together data maintenance and account controls; backup
+// imports are validated before any local replacement occurs.
 export async function renderSettings(context) {
   const settings = await getSettings(); const state = await getState(); const root = el("div", { class: "stack" });
   root.append(sectionTitle("Keep it yours.", "Control online naming, storage, backups, and scanner diagnostics."));

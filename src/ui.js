@@ -1,3 +1,5 @@
+// Build elements with textContent for user-provided strings, avoiding HTML
+// interpolation while keeping screen construction concise.
 export function el(tag, options = {}, children = []) {
   const node = document.createElement(tag);
   for (const [key, value] of Object.entries(options)) {
@@ -26,3 +28,5 @@ export function button(label, className = "secondary", handler = null) {
 export function field(labelText, input) {
   return el("label", {}, [document.createTextNode(labelText), input]);
 }
+// Small DOM helpers centralize safe text rendering and common interaction
+// patterns used by the app's screens.

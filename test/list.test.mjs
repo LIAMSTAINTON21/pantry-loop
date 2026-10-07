@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import { daysBetween, generateList } from "../src/list.js";
 import { product, purchase, depletion } from "./fixtures.mjs";
 
+// Lock down suggestion rules around purchase intervals, stock depletion,
+// staples, snoozes, and calendar boundaries.
 const code = "4006381333931";
 const prediction = dates => dates.map((date, index) => purchase(`p${index}`, index + 1, code, date));
 

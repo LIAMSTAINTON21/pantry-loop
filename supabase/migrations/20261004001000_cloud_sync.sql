@@ -1,3 +1,5 @@
+-- Store one revisioned JSON snapshot per authenticated account. Row-level
+-- security ties access to auth.uid(); conditional writes detect device races.
 create extension if not exists pgcrypto with schema extensions;
 
 create schema if not exists private;

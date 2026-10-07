@@ -1,3 +1,5 @@
+# Supabase CLI project configuration for the product-identification edge
+# function; deployment relies on its own runtime secrets, not browser config.
 [functions.identify-product]
 # The handler validates the bearer token with Auth /user and checks the owner email.
 # Legacy gateway verification does not support the project's new signing keys.

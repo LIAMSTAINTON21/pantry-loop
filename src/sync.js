@@ -9,6 +9,8 @@ function occurredAt(event) {
   return event.purchasedAt ?? event.finishedAt ?? "";
 }
 
+// Device session and backup metadata stays local. Proxy URLs are stripped from
+// synchronized settings so a snapshot cannot install a remote service target.
 function cleanMeta(rows) {
   const deviceOnly = new Set(["activeSession", "storagePersistent", "lastJsonBackupRequest", "cloudReplacePending"]);
   return rows.filter(row => !deviceOnly.has(row.key)).map(row => {
@@ -113,6 +115,8 @@ function normalizeSequences(purchases, depletions) {
 }
 
 export function mergeBackups(remoteInput, localInput) {
+  // Validate both sides before merging. A reset timestamp acts as a deletion
+  // boundary; otherwise records merge by stable IDs and edit timestamps.
   const remote = validateBackup(remoteInput);
   const local = validateBackup(localInput);
   const remoteReset = resetVersion(remote.meta);
@@ -194,6 +198,8 @@ export async function synchronizeNow() {
   const localDeviceMeta = deviceMeta(local.meta);
   const forceCloudReplace = local.meta.some(row => row.key === "cloudReplacePending" && row.value === true);
   for (let attempt = 0; attempt < RETRIES; attempt += 1) {
+    // The revision condition makes writes optimistic: on a competing device
+    // edit, reread and merge instead of silently overwriting its snapshot.
     const remote = await readRemote(client, userId);
     const snapshot = remote?.snapshot ? mergeBackups(remote.snapshot, local) : cloudBackupEnvelope(local);
     try {

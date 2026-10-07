@@ -1,3 +1,5 @@
+// Shared factories provide realistic records so each test only specifies the
+// fields relevant to its scenario.
 export const product = (barcode = "4006381333931", patch = {}) => ({
   barcode, barcodeFormat: "ean_13", name: `Product ${barcode}`, brand: null, size: null, category: null,
   userEditedFields: [], lookup: { state: "manual", source: null, checkedAt: null, nextRetryAt: null },

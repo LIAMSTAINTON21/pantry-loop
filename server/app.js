@@ -5,6 +5,8 @@ import { createServer } from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+// The local server owns authentication, private file storage, and the bounded
+// vision proxy; only allowlisted browser assets are served publicly.
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const DEFAULT_ROOT = path.resolve(HERE, "..");
 const MODEL = "gpt-4o-mini-2024-07-18";

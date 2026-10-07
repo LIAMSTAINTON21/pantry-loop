@@ -3,6 +3,9 @@ import { getMeta, getSettings, getState, logCheckedDraft, setMeta, saveProduct }
 import { formatFullShoppingList, nextTescoItem, normaliseTescoProgress, openTescoSearch, undoTescoProgress, updateTescoProgress } from "../tesco.js";
 import { el, empty, sectionTitle, button } from "../ui.js";
 
+// A draft is separate from completed purchase events, so checking a suggestion
+// does not change stock until the user confirms the list.
+
 function mergeDraft(generated, current) {
   const old = new Map((current?.items ?? []).map(item => [item.barcode, item]));
   return generated.map(item => ({ ...item, qty: old.get(item.barcode)?.qty ?? item.qty, checked: old.get(item.barcode)?.checked ?? false }));

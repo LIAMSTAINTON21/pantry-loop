@@ -1,3 +1,5 @@
+// Recover from a missing catalogue match using a package photo or manual details.
+// AI suggestions remain editable and are returned to quantity review before saving.
 import { el, field } from "./ui.js";
 import { CameraScanner } from "./scanner.js";
 import { identifyBarcode } from "./lookup.js";
@@ -12,6 +14,7 @@ function action(symbol, label, className, handler) {
 }
 
 export async function compressProductImage(file, maxDimension = 1280, quality = 0.78) {
+  // Cap image dimensions before upload to reduce mobile bandwidth and request size.
   const bitmap = await createImageBitmap(file);
   const scale = Math.min(1, maxDimension / Math.max(bitmap.width, bitmap.height));
   const canvas = document.createElement("canvas"); canvas.width = Math.max(1, Math.round(bitmap.width * scale)); canvas.height = Math.max(1, Math.round(bitmap.height * scale));
@@ -40,6 +43,8 @@ export function parseVisionProduct(data) {
 }
 
 async function identifyPhoto(image, barcode) {
+  // Send the signed-in user's token to the existing protected Edge Function.
+  // The OpenAI credential lives on that server, never in this browser module.
   const client = await getSupabaseClient();
   const { data: authData, error: authError } = await client.auth.getSession();
   const accessToken = authData?.session?.access_token;
@@ -65,15 +70,17 @@ async function identifyPhoto(image, barcode) {
   return product;
 }
 
-export function showIdentificationFallback({ barcode = null, barcodeFormat = null, settings, toast }) {
+export function showIdentificationFallback({ barcode = null, barcodeFormat = null, initialImage = null, autoIdentify = Boolean(barcode), settings, toast }) {
   return new Promise(resolve => {
     const dialog = el("dialog", { class: "identify-dialog", "aria-labelledby": "identify-title" });
     const panel = el("div", { class: "identify-panel" }); dialog.append(panel); document.body.append(dialog);
     let barcodeScanner = null;
     let screenVersion = 0;
+    let finished = false;
     let draft = {};
+    let aiStatus = '';
     const stopBarcodeScanner = () => { barcodeScanner?.stop(); barcodeScanner = null; };
-    const finish = value => { screenVersion++; stopBarcodeScanner(); dialog.classList.add("is-leaving"); setTimeout(() => { dialog.close(); dialog.remove(); resolve(value); }, 180); };
+    const finish = value => { if (finished) return; finished = true; screenVersion++; stopBarcodeScanner(); dialog.classList.add("is-leaving"); setTimeout(() => { dialog.close(); dialog.remove(); resolve(value); }, 180); };
     const errorText = barcode ? "We couldn’t find this barcode in the product catalogue." : "No barcode? You can still add the product.";
 
     const showOptions = () => {
@@ -97,22 +104,27 @@ export function showIdentificationFallback({ barcode = null, barcodeFormat = nul
     };
 
     const showLoading = async file => {
+      // Each screen change invalidates old requests, preventing a late AI response
+      // from replacing details the user has already started entering manually.
       stopBarcodeScanner();
       const version = ++screenVersion;
-      panel.replaceChildren(el("span", { class: "spinner identify-spinner", "aria-hidden": "true" }), el("h1", { id: "identify-title", text: "Reading the package…" }), el("p", { class: "confirm-message", text: "Looking for the product, brand, variant and pack size." }), el("div", { class: "identify-skeleton" }));
+      aiStatus = 'AI mode — reading the product label';
+      panel.replaceChildren(el("p", { class: "confirm-kicker", role: "status", text: "AI MODE" }), el("span", { class: "spinner identify-spinner", "aria-hidden": "true" }), el("h1", { id: "identify-title", text: "Reading the package…" }), el("p", { class: "confirm-message", text: "Looking for the product, brand, variant and pack size. You’ll check the result before anything is saved." }), el("div", { class: "identify-skeleton" }), el("button", { type: "button", class: "secondary", text: "Enter details manually", onclick: () => showForm(draft, { code: barcode, format: barcodeFormat }) }));
       try {
         const image = typeof file === "string" ? file : await compressProductImage(file);
         const product = await identifyPhoto(image, barcode);
         if (version !== screenVersion) return;
+        aiStatus = 'AI suggestion — please check the name, brand and size.';
         showForm({ ...draft, ...product }, { code: barcode, format: barcodeFormat });
       } catch (error) {
         if (version !== screenVersion) return;
+        aiStatus = 'AI mode couldn’t identify this item. Please enter its details below.';
         toast(`${error.message}. Your barcode has been kept.`, { error: true });
         showForm(draft, { code: barcode, format: barcodeFormat });
       }
     };
 
-    const showBarcodeScanner = async (product = {}) => {
+    const showBarcodeScanner = async (product = {}, aiMode = false) => {
       stopBarcodeScanner();
       draft = product;
       const version = ++screenVersion;
@@ -130,7 +142,8 @@ export function showIdentificationFallback({ barcode = null, barcodeFormat = nul
       capture.disabled = true;
       const photo = el("input", { type: "file", accept: "image/*", capture: "environment", class: "sr-only", "aria-label": "Choose product photo" });
       photo.addEventListener("change", () => { if (photo.files?.[0]) showLoading(photo.files[0]); });
-      panel.replaceChildren(el("p", { class: "confirm-kicker", text: "BARCODE + PRODUCT LABEL" }), el("h1", { id: "identify-title", text: "Scan, then show the label" }), el("div", { class: "identify-camera" }, [video, el("div", { class: "aim", "aria-hidden": "true" })]), codeStatus, status, capture, photo, el("button", { type: "button", class: "secondary", text: "Take or choose a photo", onclick: () => { stopBarcodeScanner(); photo.click(); } }), el("button", { type: "button", class: "identify-back", text: "Back to product details", onclick: () => showForm(draft, { code: barcode, format: barcodeFormat }) }));
+      photo.addEventListener("cancel", () => { if (!finished && version === screenVersion) showBarcodeScanner(draft, aiMode); });
+      panel.replaceChildren(el("p", { class: "confirm-kicker", role: "status", text: aiMode ? "AI MODE" : "BARCODE + PRODUCT LABEL" }), el("h1", { id: "identify-title", text: aiMode ? "Show the front product label" : "Scan, then show the label" }), el("div", { class: "identify-camera" }, [video, el("div", { class: "aim", "aria-hidden": "true" })]), codeStatus, status, capture, photo, el("button", { type: "button", class: "secondary", text: "Take or choose a photo", onclick: () => { stopBarcodeScanner(); photo.click(); } }), el("button", { type: "button", class: "identify-back", text: "Back to product details", onclick: () => showForm(draft, { code: barcode, format: barcodeFormat }) }));
       try {
         barcodeScanner = new CameraScanner(video, async detection => {
           if (version !== screenVersion || detection.code === barcode) return;
@@ -140,10 +153,13 @@ export function showIdentificationFallback({ barcode = null, barcodeFormat = nul
           const result = await identifyBarcode(detection.code, settings);
           if (version !== screenVersion) return;
           if (result.match) draft = { ...draft, ...result.match };
+          else if (detection.image) { showLoading(detection.image); return; }
           status.textContent = "Now show the front label and tap Read name and brand.";
         }, state => { if (version === screenVersion && (state === "native" || state === "fallback")) { capture.disabled = false; status.textContent = "Keep the product name and brand clearly visible when taking the picture."; } });
         await barcodeScanner.start({ forceFallback: settings.forceFallback });
       } catch (error) {
+        if (version !== screenVersion) return;
+        stopBarcodeScanner();
         status.textContent = error.name === "NotAllowedError" ? "Camera permission was denied. Go back and type the product details." : error.message;
       }
     };
@@ -162,12 +178,25 @@ export function showIdentificationFallback({ barcode = null, barcodeFormat = nul
       const scannedCode = el("input", { value: scanned.code ?? "", readonly: "", placeholder: "No barcode scanned" });
       const scanBarcode = el("button", { type: "button", class: "secondary", text: "Scan barcode / fill with AI", onclick: () => showBarcodeScanner({ ...product, name: name.value, brand: brand.value, price: price.value === "" ? null : Number(price.value), size: size.value, category: category.value }) });
       const submit = el("button", { type: "submit", class: "primary", text: "Confirm and add item" });
+      if (aiStatus) form.append(el("p", { class: "confirm-message", role: "status", text: aiStatus }));
       form.append(el("p", { class: "confirm-kicker", text: product.name ? "PRODUCT DETAILS" : "MANUAL PRODUCT" }), el("h1", { id: "identify-title", text: product.name ? "Check these details" : "Tell us what it is" }), el("p", { class: "confirm-message", text: "Scan the barcode if it has one, then check or enter the details." }), el("div", { class: "identify-barcode-row" }, [field("Barcode (optional)", scannedCode), scanBarcode]), field("Product name", name), el("div", { class: "identify-grid" }, [field("Brand", brand), field("Price (£, optional)", price)]), el("div", { class: "identify-grid" }, [field("Quantity / size", size), field("Category (optional)", category)]), submit, el("button", { type: "button", class: "identify-back", text: "Back to options", onclick: showOptions }));
-      form.addEventListener("submit", event => { event.preventDefault(); finish({ name: name.value.trim(), brand: brand.value.trim() || null, price: price.value === "" ? null : Number(price.value), currency: "GBP", size: size.value.trim() || null, category: category.value.trim() || null, imageUrl: product.imageUrl ?? null, source: product.source ?? "Manual entry", barcode: scanned.code ?? null, barcodeFormat: scanned.format ?? null }); });
+      form.addEventListener("submit", event => {
+        event.preventDefault();
+        // HTML required accepts whitespace; validate the trimmed name before the
+        // confirmation screen treats these details as a real product.
+        if (!name.value.trim()) { name.setCustomValidity("Enter a product name"); name.reportValidity(); return; }
+        name.setCustomValidity("");
+        finish({ name: name.value.trim(), brand: brand.value.trim() || null, price: price.value === "" ? null : Number(price.value), currency: "GBP", size: size.value.trim() || null, category: category.value.trim() || null, imageUrl: product.imageUrl ?? null, source: product.source ?? "Manual entry", barcode: scanned.code ?? null, barcodeFormat: scanned.format ?? null });
+      });
+      name.addEventListener("input", () => name.setCustomValidity(""));
       panel.replaceChildren(form); requestAnimationFrame(() => name.focus());
     };
 
     dialog.addEventListener("cancel", event => { event.preventDefault(); finish(null); });
-    showOptions(); dialog.showModal(); requestAnimationFrame(() => dialog.classList.add("is-visible"));
+    dialog.showModal();
+    if (initialImage) showLoading(initialImage);
+    else if (autoIdentify) showBarcodeScanner(draft, true);
+    else showOptions();
+    requestAnimationFrame(() => dialog.classList.add("is-visible"));
   });
 }

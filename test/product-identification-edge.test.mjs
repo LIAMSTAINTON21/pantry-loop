@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import { createProductIdentificationHandler } from "../supabase/functions/identify-product/handler.mjs";
 import { MODEL, PRODUCT_SCHEMA, parseImageDataUrl } from "../supabase/functions/_shared/product-identification.mjs";
 
+// Inject network calls to check the deployed handler's gates and accounting
+// without reaching Supabase or the AI provider.
 const env = {
   SUPABASE_URL: "https://project.supabase.co",
   SUPABASE_SERVICE_ROLE_KEY: "service-test-only",

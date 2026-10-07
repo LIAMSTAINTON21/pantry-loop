@@ -1,5 +1,7 @@
 import { replayStock } from "./inventory.js";
 
+// Calendar-only helpers keep purchase intervals stable across timezone and
+// daylight-saving changes.
 export function daysBetween(from, to) {
   const [fy, fm, fd] = from.split("-").map(Number);
   const [ty, tm, td] = to.split("-").map(Number);
@@ -45,6 +47,8 @@ function purchaseOccasions(barcode, purchases, today) {
 }
 
 export function generateList(products, purchases, depletions, today, settings = {}) {
+  // Suggestions combine immediate run-outs, scheduled staples, and learned
+  // purchase intervals; these reasons remain separate for transparent review.
   const horizon = Number.isInteger(settings.planningHorizonDays) ? settings.planningHorizonDays : 7;
   const categoryOrder = settings.categoryOrder ?? [];
   const rank = new Map(categoryOrder.map((category, index) => [category, index]));

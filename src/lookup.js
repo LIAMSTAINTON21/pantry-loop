@@ -7,6 +7,8 @@ let lastStart = 0;
 
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
 
+// Provider responses are normalized into the app's product shape, and a
+// barcode match is required before outside metadata can be trusted.
 export function openFoodFactsAdapter(data, requested) {
   const product = data?.product;
   const returned = String(product?.code ?? data?.code ?? "");
@@ -68,6 +70,8 @@ export async function identifyBarcode(barcode, settings = null) {
 }
 
 async function lookupOne(product) {
+  // Ignore a response if a restore replaced the database while the request was
+  // in flight, and never overwrite fields the user has edited.
   const generation = getDatabaseGeneration();
   const elapsed = Date.now() - lastStart; if (elapsed < 5000) await wait(5000 - elapsed);
   lastStart = Date.now();

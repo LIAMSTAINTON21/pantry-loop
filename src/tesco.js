@@ -1,5 +1,7 @@
 export const TESCO_SEARCH_BASE = "https://www.tesco.com/shop/en-GB/search?query=";
 
+// This module tracks progress against a confirmed list while sending each item
+// to Tesco's public search page; it does not interact with a Tesco account.
 function quantity(item) {
   return Number.isSafeInteger(item?.qty) && item.qty > 0 ? item.qty : 1;
 }
@@ -17,6 +19,8 @@ export function formatFullShoppingList(items) {
 }
 
 export function normaliseTescoProgress(items, progress = {}) {
+  // Persisted list state can outlive edits to the list. Keep only valid current
+  // item barcodes and remove conflicting checked/skipped marks.
   const available = new Set(items.map(item => item.barcode));
   const uniqueAvailable = values => [...new Set(Array.isArray(values) ? values : [])].filter(value => available.has(value));
   const addedBarcodes = uniqueAvailable(progress.addedBarcodes);

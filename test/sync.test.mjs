@@ -5,6 +5,8 @@ globalThis.document = { baseURI: "http://localhost:8080/" };
 const { cloudBackupEnvelope, mergeBackups, restoreDeviceMeta } = await import("../src/sync.js");
 const { product, purchase, depletion } = await import("./fixtures.mjs");
 
+// These cases document merge rules for event corrections, product edits,
+// device-only metadata, and resets across competing snapshots.
 const backup = (patch = {}) => ({
   appId: "pantry-loop", schemaVersion: 1, exportedAt: "2026-10-04T10:00:00Z",
   products: [product()], purchases: [], depletions: [],

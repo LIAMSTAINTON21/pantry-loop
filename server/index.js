@@ -3,6 +3,8 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+// Load local deployment configuration before validating the permitted account
+// and binding the service to loopback for local use.
 const here = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(here, "..");
 for (const filename of [".env.local", ".env"]) {

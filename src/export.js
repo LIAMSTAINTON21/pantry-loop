@@ -1,5 +1,7 @@
 import { APP_ID, SCHEMA_VERSION, getState, replaceAll, setMeta } from "./db.js";
 
+// Backups are treated as untrusted input: validate relationships and field
+// shapes before either exporting a consistent snapshot or replacing local data.
 const MAX_IMPORT_BYTES = 50 * 1024 * 1024;
 const isoDateTime = value => typeof value === "string" && !Number.isNaN(Date.parse(value));
 const day = value => typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value) && !Number.isNaN(Date.parse(`${value}T00:00:00Z`));
@@ -21,6 +23,8 @@ export function validateBackup(data) {
     productKeys.add(product.barcode);
   }
 
+  // Replacement chains preserve the identity and ordering slot of a corrected
+  // purchase/depletion, so reject missing links, cycles, and cross-type links.
   const ids = new Set(); const activeSeq = new Set(); const eventTypes = new Map();
   const allEvents = [...data.purchases.map(event => [event, "purchase"]), ...data.depletions.map(event => [event, "depletion"])];
   for (const [event, type] of allEvents) {
@@ -63,6 +67,8 @@ export function validateBackup(data) {
     }
   }
   const meta = structuredClone(data.meta).map(row => {
+    // Old proxy endpoints may contain deployment-specific details and are not
+    // valid portable settings; strip them from restored backups.
     if (row.key !== "settings" || !row.value || typeof row.value !== "object") return row;
     const { catalogueProxyUrl: _catalogue, visionProxyUrl: _vision, ...safeSettings } = row.value;
     return { ...row, value: safeSettings };
@@ -93,6 +99,8 @@ const excelText = value => {
 };
 
 function sheet(rows, columns) {
+  // Force exported cells to text and escape spreadsheet formula prefixes so
+  // product names or settings cannot execute as formulas when opened.
   const values = [columns, ...rows.map(row => columns.map(column => excelText(row[column])))];
   const worksheet = globalThis.XLSX.utils.aoa_to_sheet(values);
   for (const address of Object.keys(worksheet)) if (address[0] !== "!") worksheet[address].t = "s";
@@ -123,6 +131,8 @@ export async function readBackupFile(file) {
 }
 
 export async function restoreBackup(validated) {
+  // Mark the restored snapshot for cloud replacement so older remote rows do
+  // not reappear during the next synchronization.
   await replaceAll(validated);
   await setMeta("cloudResetAt", new Date().toISOString());
   await setMeta("cloudReplacePending", true);

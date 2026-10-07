@@ -1,3 +1,5 @@
+// IndexedDB stores products plus an append-only purchase/depletion history.
+// Stock is rebuilt from active events after each change, keeping undo and edits consistent.
 import { replayStock } from "./inventory.js";
 
 export const APP_ID = "pantry-loop";
@@ -10,6 +12,7 @@ let dataChangeVersion = 0;
 let changeChannel = null;
 
 function ensureChangeChannel() {
+  // Notify other tabs, which keep their own database connection and sync version.
   if (changeChannel || typeof window === "undefined" || typeof BroadcastChannel === "undefined") return changeChannel;
   changeChannel = new BroadcastChannel("pantry-loop-data-changes");
   changeChannel.addEventListener("message", () => {
@@ -40,6 +43,7 @@ export function getDatabaseGeneration() { return generation; }
 export function getDataChangeVersion() { return dataChangeVersion; }
 
 export async function openDatabase() {
+  // Reuse one connection, creating stores only during the first schema upgrade.
   ensureChangeChannel();
   databasePromise ??= globalThis.idb.openDB(DB_NAME, SCHEMA_VERSION, {
     upgrade(db) {
@@ -114,18 +118,27 @@ async function updateStockInTransaction(tx, barcode) {
   await productStore.put({ ...product, onHandQty: stock.onHandQty, status: stock.status });
 }
 
-export async function recordEvent({ type, barcode, barcodeFormat, qty = 1, source = "scan", sessionId, listId = null, actionId = crypto.randomUUID(), name = null }) {
+// Save the scan, its product details, and the derived stock in one transaction.
+// A failure therefore leaves nothing saved, so reviewing a different quantity is safe.
+export async function recordEvent({ type, barcode, barcodeFormat, qty = 1, source = "scan", sessionId, listId = null, actionId = crypto.randomUUID(), name = null, productPatch = {}, userFields = [] }) {
   if (!Number.isSafeInteger(qty) || qty <= 0) throw new Error("Quantity must be a positive whole number");
   if (!new Set(["purchase", "depletion"]).has(type)) throw new Error("Invalid event type");
   const db = await openDatabase();
   const tx = db.transaction(STORES, "readwrite");
+  try {
   const eventStore = tx.objectStore(type === "purchase" ? "purchases" : "depletions");
   const existing = await eventStore.get(actionId);
-  if (existing) { await tx.done; return { event: existing, duplicate: true, product: await db.get("products", barcode) }; }
+  if (existing) {
+    if (existing.barcode !== barcode || existing.qty !== qty || existing.voidedAt) throw new Error("This scan was already saved with different details");
+    const product = await tx.objectStore("products").get(barcode);
+    await tx.done; return { event: existing, duplicate: true, product };
+  }
 
   const productStore = tx.objectStore("products");
   let product = await productStore.get(barcode);
-  if (!product) { product = newProduct(barcode, barcodeFormat, name); await productStore.add(product); }
+  product ??= newProduct(barcode, barcodeFormat, name);
+  product = { ...product, ...productPatch, userEditedFields: [...new Set([...(product.userEditedFields ?? []), ...userFields])], updatedAt: new Date().toISOString() };
+  await productStore.put(product);
   const sequenceRow = await tx.objectStore("meta").get("nextSeq");
   const seq = sequenceRow?.value ?? 1;
   await tx.objectStore("meta").put({ key: "nextSeq", value: seq + 1 });
@@ -144,12 +157,20 @@ export async function recordEvent({ type, barcode, barcodeFormat, qty = 1, sourc
     }
   }
   await updateStockInTransaction(tx, barcode);
+  const savedProduct = await productStore.get(barcode);
   await tx.done;
   notifyDataChanged();
-  return { event, duplicate: false, product: await db.get("products", barcode) };
+  return { event, duplicate: false, product: savedProduct };
+  } catch (error) {
+    // JavaScript validation errors do not automatically abort IndexedDB transactions.
+    try { tx.abort(); } catch { /* already committed or aborted */ }
+    try { await tx.done; } catch { /* report the original error below */ }
+    throw error;
+  }
 }
 
 export async function voidEvent(storeName, id) {
+  // Mark the event inactive so sync and backups retain the history of its removal.
   if (!new Set(["purchases", "depletions"]).has(storeName)) throw new Error("Invalid event store");
   const db = await openDatabase();
   const tx = db.transaction([storeName, "products", storeName === "purchases" ? "depletions" : "purchases"], "readwrite");
@@ -165,6 +186,9 @@ export async function voidEvent(storeName, id) {
 }
 
 export async function correctEvent(storeName, id, qty) {
+  // Keep the original sequence position: changing quantity must not reorder
+  // purchases relative to later depletions when stock is replayed.
+  if (!new Set(["purchases", "depletions"]).has(storeName)) throw new Error("Invalid event store");
   if (!Number.isSafeInteger(qty) || qty <= 0) throw new Error("Quantity must be positive");
   const other = storeName === "purchases" ? "depletions" : "purchases";
   const db = await openDatabase(); const tx = db.transaction([storeName, other, "products"], "readwrite");
@@ -189,11 +213,13 @@ export async function undoCorrection(storeName, replacementId) {
 }
 
 export async function saveProduct(barcode, patch, userFields = []) {
-  const db = await openDatabase(); const product = await db.get("products", barcode);
+  // Read and write under the same lock so a rename cannot overwrite a concurrent scan.
+  const db = await openDatabase(); const tx = db.transaction("products", "readwrite");
+  const store = tx.objectStore("products"); const product = await store.get(barcode);
   if (!product) throw new Error("Product not found");
   const userEditedFields = [...new Set([...(product.userEditedFields ?? []), ...userFields])];
   const updated = { ...product, ...patch, userEditedFields, updatedAt: new Date().toISOString() };
-  await db.put("products", updated); notifyDataChanged(); return updated;
+  await store.put(updated); await tx.done; notifyDataChanged(); return updated;
 }
 
 export async function getState() {
@@ -244,6 +270,8 @@ export async function clearLocalData() {
 }
 
 export async function logCheckedDraft(draft) {
+  // Scanned purchases may already cover a checked row; record only the remainder
+  // and complete the draft in the same transaction to make retries harmless.
   const db = await openDatabase();
   const tx = db.transaction(STORES, "readwrite");
   const metaStore = tx.objectStore("meta");

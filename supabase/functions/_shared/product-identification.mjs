@@ -1,5 +1,7 @@
 import { Buffer } from "node:buffer";
 
+// Shared validation and fixed prompts keep the hosted function and local
+// server aligned on image limits, response fields, and request cost.
 export const MODEL = "gpt-4o-mini-2024-07-18";
 export const OPENAI_URL = "https://api.openai.com/v1/responses";
 export const MAX_REQUEST_BYTES = 3 * 1024 * 1024;
@@ -33,6 +35,8 @@ export const USER_PROMPT = "Identify the single grocery product shown. Prefer th
 const invalidImage = (message, status = 400) => Object.assign(new Error(message), { code: "invalid_image", status });
 
 function imageDimensions(bytes, mediaType) {
+  // Check dimensions from image headers before the provider decodes the image;
+  // this limits pixel work even when compressed bytes are small.
   if (mediaType === "image/png" && bytes.length >= 24 && bytes.toString("ascii", 12, 16) === "IHDR") {
     return { width: bytes.readUInt32BE(16), height: bytes.readUInt32BE(20) };
   }

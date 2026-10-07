@@ -1,5 +1,7 @@
 name: Deploy Pantry Loop to GitHub Pages
 
+# Publish only static client assets; server secrets and local account data stay
+# outside the Pages deployment.
 on:
   push:
     branches: [main]

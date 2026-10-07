@@ -1,3 +1,5 @@
+/* Shared dark theme and reusable controls. View-specific blocks below arrange
+   the camera, stock/list cards, and full-screen review dialogs for phone use. */
 :root {
   color-scheme: dark;
   --bg: #101612;
@@ -38,7 +40,8 @@ a { color: inherit; }
 .auth-status.error { color: #ffb4a8; }
 .auth-checking { min-height: 150px; place-items: center; color: var(--muted); }
 main { width: min(760px, 100%); min-height: calc(100vh - 150px); margin: 0 auto; padding: 18px 16px 110px; }
-.bottom-nav { position: fixed; z-index: 20; inset: auto 0 0; display: grid; grid-template-columns: repeat(4, 1fr); padding: 7px max(8px, env(safe-area-inset-right)) max(7px, env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left)); background: color-mix(in srgb, #121a15 96%, transparent); border-top: 1px solid var(--line); }
+/* Five destinations share one row; safe-area padding clears phone home indicators. */
+.bottom-nav { position: fixed; z-index: 20; inset: auto 0 0; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); padding: 7px max(8px, env(safe-area-inset-right)) max(7px, env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left)); background: color-mix(in srgb, #121a15 96%, transparent); border-top: 1px solid var(--line); }
 .bottom-nav a { display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 2px; text-decoration: none; color: var(--muted); border-radius: 12px; font-size: .76rem; font-weight: 700; }
 .bottom-nav a span { font-size: 1.15rem; }
 .bottom-nav a[aria-current="page"] { color: var(--accent); background: #253121; }

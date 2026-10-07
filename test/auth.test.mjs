@@ -2,6 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createAuthClient, createAuthGate, isPlausibleEmail } from "../src/auth.js";
 
+// Mock Supabase auth to exercise OTP, restored sessions, and sign-out without
+// depending on an external account or network.
 function mockClient() {
   const calls = [];
   let authChange;

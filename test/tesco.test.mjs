@@ -2,6 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { formatFullShoppingList, nextTescoItem, normaliseTescoProgress, openTescoSearch, tescoSearchUrl, undoTescoProgress, updateTescoProgress } from "../src/tesco.js";
 
+// Cover URL safety, readable summaries, and per-item progress while shopping
+// from a confirmed list.
 const items = [
   { barcode: "one", name: "Whole milk", size: "4 pints", qty: 2 },
   { barcode: "two", name: "Bread & butter", size: null, qty: 1 }

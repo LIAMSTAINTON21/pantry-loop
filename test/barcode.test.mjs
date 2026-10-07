@@ -2,6 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { expandUpce, normalizeBarcode, validGtin } from "../src/barcode.js";
 
+// Canonical conversion prevents equivalent retail formats from creating
+// duplicate product records.
 test("validates retail check digits and preserves EAN-8", () => {
   assert.equal(validGtin("4006381333931"), true);
   assert.equal(validGtin("4006381333932"), false);

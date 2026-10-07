@@ -1,3 +1,5 @@
+-- Apply advisor-recommended query and policy hardening to cloud-sync objects
+-- while preserving the existing access rules and snapshot model.
 create policy "no direct access to allowed account hashes"
 on private.allowed_account_hashes
 as restrictive

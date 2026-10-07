@@ -68,8 +68,32 @@ The cloud snapshot remains available for the next sign-in. JSON backups remain t
 restorable format. Legacy custom proxy addresses are removed during backup import
 and synchronization so a backup cannot redirect photos or barcodes.
 
-Product photos are re-encoded and resized in the browser, uploaded only after the
-user deliberately captures one, and are not persisted by the Edge Function.
+Product photos are re-encoded and resized in the browser. When a scanned barcode
+is unknown, the captured camera frame is automatically sent for AI identification;
+the screen shows AI mode and asks you to review the result before saving. You can
+also deliberately capture a clearer label photo. Photos are not persisted by the
+Edge Function. Automatic identification uses the same AI allowance as manual photos.
+
+## Reading the code
+
+Start with `src/main.js`: it connects sign-in, routes, scan review, and saved events.
+Comments in first-party code explain why each major step exists, not just what its
+syntax does. Bundled libraries in `vendor/` remain unmodified upstream code.
+
+- `src/views/`: screens and their buttons; `stock.js` shows estimated packs at home.
+- `src/scanner.js`: camera lifecycle, visible-preview checks, and duplicate-scan prevention.
+- `src/identification.js`: unknown-barcode AI fallback and editable product details.
+- `src/confirmation.js`: quantity review, renaming, and explicit removal confirmation.
+- `src/db.js` and `src/inventory.js`: saved purchase/use-up events and stock calculations.
+- `src/auth.js` and `src/sync.js`: sign-in gating and owner-only cloud synchronization.
+- `supabase/functions/`: server-side image checks, AI requests, and usage limits.
+- `supabase/migrations/`: database permissions and persistent cloud data structures.
+- `test/`: regression examples showing expected behavior, including failure paths.
+- `server/`: optional local development server, not the production phone backend.
+
+Confirmed scans update stock immediately. The session's finish button opens saved
+stock without adding the same purchases again. Removing a session entry reverses
+that entry only; it does not delete the product's earlier stock history.
 
 ## Commands
 

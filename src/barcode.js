@@ -1,5 +1,7 @@
 const FORMATS = new Set(["ean_13", "ean_8", "upc_a", "upc_e", "code_128", "manual"]);
 
+// Retail GTINs share a modulo-10 check digit; validation here prevents a scan
+// typo from becoming a separate product record.
 export function validGtin(code) {
   if (!/^\d+$/.test(code) || ![8, 12, 13].includes(code.length)) return false;
   const digits = [...code].map(Number);
@@ -12,6 +14,8 @@ export function validGtin(code) {
 }
 
 export function expandUpce(value) {
+  // UPC-E compresses runs of zeroes; expand by its final data digit before
+  // converting UPC-A into the app's canonical 13-digit key.
   const raw = String(value).trim();
   if (!/^\d{8}$/.test(raw)) throw new Error("UPC-E must contain 8 digits");
   const ns = raw[0];
@@ -34,6 +38,7 @@ export function normalizeBarcode(value, format) {
     return raw.startsWith("manual:") ? raw : `manual:${raw}`;
   }
   if (canonicalFormat === "code_128") {
+    // Non-GTIN values use a namespace to avoid colliding with retail numbers.
     if (!raw || raw.length > 180) throw new Error("Invalid Code 128 value");
     return `code128:${raw}`;
   }

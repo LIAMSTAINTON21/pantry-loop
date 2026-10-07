@@ -5,6 +5,8 @@ import os from "node:os";
 import path from "node:path";
 import { createPantryServer, serverConstants } from "../server/app.js";
 
+// Use isolated storage and stubbed provider calls to make HTTP boundaries,
+// authentication, quotas, and concurrent revisions deterministic.
 const EMAIL = "owner@example.test";
 function png(width = 1, height = 1) {
   const bytes = Buffer.alloc(33);

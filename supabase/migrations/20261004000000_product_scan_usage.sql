@@ -1,4 +1,6 @@
 -- Private, per-user quota state for the identify-product Edge Function.
+-- Service-only RPCs reserve a conservative amount before provider work and
+-- reconcile actual token cost afterward under daily and monthly ceilings.
 create schema if not exists private;
 revoke all on schema private from public, anon, authenticated;
 grant usage on schema private to service_role;

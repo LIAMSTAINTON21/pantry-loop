@@ -3,7 +3,11 @@ import { getSupabaseClient } from "./supabase-config.js";
 const GENERIC_REQUEST_ERROR = "We couldn’t send a sign-in link. Please wait a little and try again.";
 const GENERIC_VERIFY_ERROR = "That code is invalid or has expired. Request a new code and try again.";
 
+// The client wraps Supabase OTP/session calls; the gate controls which app
+// content is exposed while a signed-in session exists.
 function normalizedEmail(value) {
+  // Use one normalized address for both validation and the provider request so
+  // casing or stray whitespace cannot split a single account's identity.
   return String(value ?? "").trim().toLowerCase();
 }
 
@@ -28,6 +32,8 @@ export function createAuthClient(clientPromise = getSupabaseClient()) {
       const clean = normalizedEmail(email);
       if (!isPlausibleEmail(clean)) throw new Error("Enter a valid email address.");
       try {
+        // Existing-user-only OTP avoids creating accounts from this private
+        // app's sign-in screen; redirect to the clean app path after the link.
         const client = await clientPromise;
         const location = globalThis.location;
         const redirectTo = location?.origin && location?.pathname ? `${location.origin}${location.pathname}` : undefined;
@@ -102,6 +108,8 @@ export function createAuthGate({
 
   const protectedNodes = () => [...documentRef.querySelectorAll(protectedSelector)];
   const setProtected = visible => {
+    // Hiding is paired with inert/aria-hidden so locked content is also absent
+    // from keyboard navigation and assistive technology.
     for (const node of protectedNodes()) {
       node.hidden = !visible;
       node.inert = !visible;

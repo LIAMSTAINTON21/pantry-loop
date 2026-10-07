@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import { replayStock } from "../src/inventory.js";
 import { purchase, depletion } from "./fixtures.mjs";
 
+// Verify stock reconstruction from active events, including corrections
+// replayed at their original sequence position.
 const code = "4006381333931";
 
 test("empty history remains unknown", () => assert.deepEqual(replayStock(code, [], []), { onHandQty: null, status: "unknown", lastEvent: null }));

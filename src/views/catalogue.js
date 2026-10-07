@@ -2,6 +2,8 @@ import { getState, newProduct, openDatabase, recordEvent, saveProduct } from "..
 import { retryLookup } from "../lookup.js";
 import { el, empty, sectionTitle, button, field } from "../ui.js";
 
+// Catalogue edits are explicit user actions; background lookup respects the
+// per-field markers that protect names and details edited by the user.
 export async function renderCatalogue(context) {
   const state = await getState(); const root = el("div", { class: "stack" });
   root.append(sectionTitle("Everything you buy.", "Fix names, set staples, enter opening stock, and review estimated packs."));
