@@ -1,6 +1,7 @@
 // IndexedDB stores products plus an append-only purchase/depletion history.
 // Stock is rebuilt from active events after each change, keeping undo and edits consistent.
 import { replayStock } from "./inventory.js";
+import { calculateMeal, validateFood } from "./nutrition.js";
 
 export const APP_ID = "pantry-loop";
 export const SCHEMA_VERSION = 1;
@@ -222,6 +223,7 @@ export async function correctEvent(storeName, id, qty) {
   const db = await openDatabase(); const tx = db.transaction([storeName, other, "products"], "readwrite");
   const store = tx.objectStore(storeName); const original = await store.get(id);
   if (!original || original.voidedAt) throw new Error("That event is no longer active");
+  if (original.food) throw new Error("Edit food amounts in the Food diary so calories and stock stay linked.");
   const voidedAt = new Date().toISOString(); const replacement = { ...original, id: crypto.randomUUID(), qty, replacesId: original.id, voidedAt: null };
   await store.put({ ...original, voidedAt }); await store.add(replacement); await updateStockInTransaction(tx, original.barcode); await tx.done;
   notifyDataChanged(); return replacement;
@@ -238,6 +240,45 @@ export async function undoCorrection(storeName, replacementId) {
   await store.put({ ...replacement, voidedAt: new Date().toISOString() });
   await store.put({ ...original, voidedAt: null });
   await updateStockInTransaction(tx, replacement.barcode); await tx.done; notifyDataChanged(); return true;
+}
+
+// Nutrition is embedded in the depletion, not a separate mutable diary table.
+// Existing backup/sync/void logic therefore keeps calories and stock inseparable.
+export async function recordMeal({ barcode, profile, amount, date, replacesId = null, actionId = crypto.randomUUID() }) {
+  const { qty, totals } = calculateMeal(profile, amount);
+  const db = await openDatabase();
+  const tx = db.transaction(STORES, "readwrite");
+  try {
+    const store = tx.objectStore("depletions");
+    const duplicate = await store.get(actionId);
+    if (duplicate) {
+      const saved = duplicate.food;
+      if (duplicate.voidedAt || duplicate.barcode !== barcode || !saved || saved.date !== date || saved.amount !== amount || ["unit", "basis", "packSize", "kcal", "protein", "carbs", "fat"].some(key => (saved.profile[key] ?? null) !== (profile[key] ?? null))) throw new Error("This food entry was already saved with different details. Reopen the diary.");
+      await tx.done; return duplicate;
+    }
+    const product = await tx.objectStore("products").get(barcode);
+    if (!product) throw new Error("Add this product to your pantry first.");
+    const original = replacesId ? await store.get(replacesId) : null;
+    if (replacesId && (!original?.food || original.voidedAt || original.barcode !== barcode)) throw new Error("This food entry has changed. Reopen the diary.");
+    const available = (product.onHandQty ?? 0) + (original?.qty ?? 0);
+    if (qty > available + 1e-8) throw new Error("Not enough stock. Add the missing packs in In stock first.");
+    const now = new Date().toISOString();
+    const food = { name: product.name, date, amount, profile: structuredClone(profile), totals };
+    validateFood(food, qty);
+    const sequenceRow = await tx.objectStore("meta").get("nextSeq");
+    const seq = original?.seq ?? sequenceRow?.value ?? 1;
+    if (!original) await tx.objectStore("meta").put({ key: "nextSeq", value: seq + 1 });
+    if (original) await store.put({ ...original, voidedAt: now });
+    const event = { id: actionId, barcode, qty, seq, sessionId: "food-diary", finishedAt: original?.finishedAt ?? now, updatedAt: now, replacesId, voidedAt: null, food };
+    await store.add(event);
+    await tx.objectStore("products").put({ ...product, nutrition: structuredClone(profile), userEditedFields: [...new Set([...(product.userEditedFields ?? []), "nutrition"])], updatedAt: now });
+    await updateStockInTransaction(tx, barcode);
+    await tx.done; notifyDataChanged(); return event;
+  } catch (error) {
+    try { tx.abort(); } catch { /* already aborted */ }
+    try { await tx.done; } catch { /* preserve original error */ }
+    throw error;
+  }
 }
 
 export async function saveProduct(barcode, patch, userFields = []) {

@@ -1,4 +1,5 @@
 import { APP_ID, SCHEMA_VERSION, getState, replaceAll, setMeta } from "./db.js";
+import { validateFood, validateNutrition } from "./nutrition.js";
 
 // Backups are treated as untrusted input: validate relationships and field
 // shapes before either exporting a consistent snapshot or replacing local data.
@@ -18,6 +19,7 @@ export function validateBackup(data) {
   for (const product of data.products) {
     if (!product || typeof product.barcode !== "string" || !product.barcode || productKeys.has(product.barcode)) throw new Error("Product keys must be unique strings");
     if (typeof product.name !== "string" || !isoDateTime(product.createdAt)) throw new Error(`Invalid product ${product.barcode}`);
+    if (product.nutrition != null) validateNutrition(product.nutrition);
     if (!Number.isSafeInteger(product.defaultQty) || product.defaultQty <= 0) throw new Error(`Invalid default quantity for ${product.barcode}`);
     if (product.snoozeUntil !== null && !day(product.snoozeUntil)) throw new Error(`Invalid snooze date for ${product.barcode}`);
     productKeys.add(product.barcode);
@@ -29,7 +31,9 @@ export function validateBackup(data) {
   const allEvents = [...data.purchases.map(event => [event, "purchase"]), ...data.depletions.map(event => [event, "depletion"])];
   for (const [event, type] of allEvents) {
     if (!event || typeof event.id !== "string" || !event.id || ids.has(event.id)) throw new Error("Event IDs must be unique strings");
-    if (!positiveInt(event.seq) || !positiveInt(event.qty) || !productKeys.has(event.barcode)) throw new Error(`Invalid event ${event.id}`);
+    const validQty = type === "depletion" && event.food ? Number.isFinite(event.qty) && event.qty > 0 : positiveInt(event.qty);
+    if (!positiveInt(event.seq) || !validQty || !productKeys.has(event.barcode)) throw new Error(`Invalid event ${event.id}`);
+    if (event.food) { if (type !== "depletion") throw new Error("Food must be a depletion"); validateFood(event.food, event.qty); }
     if (typeof event.sessionId !== "string" || !nullableIso(event.voidedAt) || (event.replacesId !== null && typeof event.replacesId !== "string")) throw new Error(`Invalid event metadata ${event.id}`);
     if (type === "purchase") {
       if (!isoDateTime(event.purchasedAt) || !day(event.purchasedOn) || !["scan", "manual", "list", "opening_stock"].includes(event.source) || (event.listId !== null && typeof event.listId !== "string")) throw new Error(`Invalid purchase ${event.id}`);
@@ -113,7 +117,7 @@ export async function exportExcel() {
   const workbook = globalThis.XLSX.utils.book_new();
   const productCols = ["barcode", "barcodeFormat", "name", "brand", "size", "price", "currency", "imageUrl", "category", "userEditedFields", "lookup", "onHandQty", "status", "isStaple", "staplePeriodDays", "defaultQty", "snoozeUntil", "neverSuggest", "createdAt"];
   const purchaseCols = ["id", "seq", "barcode", "qty", "purchasedAt", "purchasedOn", "source", "sessionId", "listId", "voidedAt", "replacesId", "clearedSnoozeUntil"];
-  const depletionCols = ["id", "seq", "barcode", "qty", "finishedAt", "sessionId", "voidedAt", "replacesId"];
+  const depletionCols = ["id", "seq", "barcode", "qty", "finishedAt", "sessionId", "voidedAt", "replacesId", "food"];
   const draft = metaMap.get("shoppingDraft");
   const listRows = (draft?.items ?? []).map(item => ({ listId: draft.id, createdAt: draft.createdAt, completedAt: draft.completedAt, barcode: item.barcode, name: item.name, checked: item.checked, qty: item.qty, reasons: item.reasons }));
   globalThis.XLSX.utils.book_append_sheet(workbook, sheet(state.products, productCols), "Products");

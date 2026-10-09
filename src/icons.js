@@ -2,6 +2,7 @@ const SVG = "http://www.w3.org/2000/svg";
 
 // Single outline family: 24px grid, 2px round strokes. Paths only, so they inherit currentColor.
 const PATHS = {
+  food: ["M12 20a8 8 0 1 0 0-16 8 8 0 0 0 0 16Z", "M12 16a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z"],
   scan: ["M4 8V6a2 2 0 0 1 2-2h2", "M16 4h2a2 2 0 0 1 2 2v2", "M20 16v2a2 2 0 0 1-2 2h-2", "M8 20H6a2 2 0 0 1-2-2v-2", "M8 8v8", "M11 8v8", "M14 8v8", "M17 8v8"],
   stock: ["M21 8 12 3 3 8v8l9 5 9-5Z", "M3 8l9 5 9-5", "M12 13v8"],
   list: ["M10 6h11", "M10 12h11", "M10 18h11", "m3 6 1.5 1.5L7 5", "m3 12 1.5 1.5L7 11", "m3 18 1.5 1.5L7 17"],

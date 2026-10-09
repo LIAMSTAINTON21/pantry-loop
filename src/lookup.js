@@ -1,7 +1,9 @@
 import { canLookup } from "./barcode.js";
 import { getDatabaseGeneration, getSettings, getState, saveProduct } from "./db.js";
+import { nutritionFromOFF } from "./nutrition.js";
 
 const API = "https://world.openfoodfacts.org/api/v3/product/";
+const FIELDS = "code,product_name,product_name_en,brands,quantity,categories,image_front_url,nutriments,serving_size,nutrition_data_per";
 let running = false;
 let lastStart = 0;
 
@@ -20,8 +22,18 @@ export function openFoodFactsAdapter(data, requested) {
     size: (product.quantity || "").trim() || null,
     category: (product.categories || "").split(",")[0]?.trim() || null,
     imageUrl: product.image_front_url || null,
-    price: null, currency: "GBP", source: "Open Food Facts v3"
+    price: null, currency: "GBP", source: "Open Food Facts v3", nutrition: nutritionFromOFF(product)
   };
+}
+
+// Explicit refresh also works for products saved before nutrition was introduced.
+export async function fetchNutrition(barcode, settings) {
+  if (!settings.onlineLookup || !navigator.onLine) throw new Error("Nutrition lookup is offline. Enter the label values below.");
+  if (!canLookup(barcode)) throw new Error("This barcode cannot be looked up. Enter the label values below.");
+  const data = await fetchJson(`${API}${encodeURIComponent(barcode)}?fields=${FIELDS}`, { headers: { Accept: "application/json" } });
+  const profile = openFoodFactsAdapter(data, barcode)?.nutrition;
+  if (!profile) throw new Error("No usable nutrition and pack size found. Enter the label values below.");
+  return profile;
 }
 
 function clean(value) { return typeof value === "string" && value.trim() ? value.trim() : null; }
@@ -63,7 +75,7 @@ export async function identifyBarcode(barcode, settings = null) {
   }
   if (!settings.onlineLookup || !canLookup(barcode) || !navigator.onLine) return { match: null, reason: navigator.onLine ? "disabled" : "offline" };
   try {
-    const fields = "code,product_name,product_name_en,brands,quantity,categories,image_front_url";
+    const fields = FIELDS;
     const data = await fetchJson(`${API}${encodeURIComponent(barcode)}?product_type=all&fields=${fields}`, { headers: { Accept: "application/json" } });
     return { match: openFoodFactsAdapter(data, barcode), provider: "open-food-facts", reason: "not-found" };
   } catch (error) { return { match: null, reason: error.name === "AbortError" ? "timeout" : "error", provider: "open-food-facts", error }; }
@@ -77,7 +89,7 @@ async function lookupOne(product) {
   lastStart = Date.now();
   const controller = new AbortController(); const timeout = setTimeout(() => controller.abort(), 8000);
   try {
-    const response = await fetch(`${API}${encodeURIComponent(product.barcode)}?product_type=all&fields=code,product_name,product_name_en,brands,quantity,categories,image_front_url`, { signal: controller.signal, headers: { Accept: "application/json" } });
+    const response = await fetch(`${API}${encodeURIComponent(product.barcode)}?product_type=all&fields=${FIELDS}`, { signal: controller.signal, headers: { Accept: "application/json" } });
     if ([429, 503].includes(response.status)) {
       const retrySeconds = Math.max(60, Number(response.headers.get("Retry-After")) || 60);
       await saveProduct(product.barcode, { lookup: { ...product.lookup, state: "pending", checkedAt: new Date().toISOString(), nextRetryAt: new Date(Date.now() + retrySeconds * 1000).toISOString() } }); return;
@@ -90,6 +102,7 @@ async function lookupOne(product) {
       await saveProduct(product.barcode, { lookup: { state: "missing", source: "Open Food Facts v3", checkedAt: new Date().toISOString(), nextRetryAt: new Date(Date.now() + 7 * 86400000).toISOString() } }); return;
     }
     const patch = {};
+    if (match.nutrition && !(current.userEditedFields ?? []).includes("nutrition")) patch.nutrition = match.nutrition;
     for (const field of ["name", "brand", "size", "category", "imageUrl"]) if (!(current.userEditedFields ?? []).includes(field)) patch[field] = match[field];
     patch.lookup = { state: "resolved", source: "Open Food Facts v3", checkedAt: new Date().toISOString(), nextRetryAt: null };
     await saveProduct(product.barcode, patch);

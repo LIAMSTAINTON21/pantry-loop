@@ -53,7 +53,7 @@ a { color: inherit; }
 .auth-checking { min-height: 150px; place-items: center; color: var(--muted); }
 main { width: min(760px, 100%); min-height: calc(100vh - 150px); margin: 0 auto; padding: 14px 16px 124px; }
 /* Five destinations share one row; the floating bar clears phone home indicators. */
-.bottom-nav { position: fixed; z-index: 20; left: 50%; bottom: max(12px, env(safe-area-inset-bottom)); width: min(460px, calc(100% - 24px)); transform: translateX(-50%); display: grid; grid-template-columns: repeat(5, 1fr); gap: 2px; padding: 5px; border-radius: 22px; background: color-mix(in srgb, #1a201c 88%, transparent); backdrop-filter: blur(20px); border: 1px solid color-mix(in srgb, #fff 7%, transparent); box-shadow: 0 18px 40px #000a; }
+.bottom-nav { position: fixed; z-index: 20; left: 50%; bottom: max(12px, env(safe-area-inset-bottom)); width: min(520px, calc(100% - 16px)); transform: translateX(-50%); display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 2px; padding: 5px; border-radius: 22px; background: color-mix(in srgb, #1a201c 88%, transparent); backdrop-filter: blur(20px); border: 1px solid color-mix(in srgb, #fff 7%, transparent); box-shadow: 0 18px 40px #000a; }
 .bottom-nav a { min-height: 54px; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 3px; text-decoration: none; color: var(--muted); border-radius: 17px; font-size: .75rem; font-weight: 650; -webkit-tap-highlight-color: transparent; transition: color .15s ease, background-color .15s ease; }
 .bottom-nav a .icon { width: 22px; height: 22px; }
 .bottom-nav a:active { background: var(--press); }

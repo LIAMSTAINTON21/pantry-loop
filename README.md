@@ -3,6 +3,35 @@
 Pantry Loop is an offline-friendly personal grocery tracker with barcode scanning,
 product-label recognition, a persistent shopping list, and a guided Tesco handoff.
 
+## Food diary and partial stock
+
+Open **Food**, scan a barcode already in your pantry (or search/select its name),
+then enter one amount in **grams, millilitres, or portions**. Enter/review calories
+per a stated basis and the total size of one pack in that same unit. Other units
+are not required. Optional protein, carbohydrate and fat values are in grams.
+Nutrition can be fetched over HTTPS from Open Food Facts; missing or ambiguous
+values require label entry. Check as-sold versus prepared values against the food
+you actually eat. No AI call or API key is needed for nutrition lookup.
+
+Saving writes a food snapshot inside one fractional-pack depletion event: 75 g
+of a 500 g pack at 200 kcal/100 g logs 150 kcal and uses 0.15 packs. In stock shows
+the remaining amount once a pack size is known. The diary includes date selection,
+an optional user-entered calorie goal, daily macros, editing, and removal that
+voids the same event to restore stock. Missing macros are marked incomplete.
+Add missing stock before logging; Used up remains for non-diary household usage.
+
+JSON backups and the existing private cloud snapshot retain food records and
+nutrition snapshots. Excel includes food details on the Depletions sheet. Update
+all devices before using fractional stock: older app versions cannot validate it.
+No Supabase schema or auth changes are required. Simultaneous offline usage on
+different devices still relies on the existing event merge and can exceed known
+stock; local concurrent saves are checked under a database transaction.
+
+The provider-independent calculation/validation layer is `src/nutrition.js`;
+`nutritionFromOFF` is the current adapter. This is a first food-diary feature, not
+a MyFitnessPal integration: recipes, exercise imports and external fitness-account
+sync are not included. Open Food Facts data is attributed in the UI (ODbL).
+
 ## Hosted phone app
 
 The production app is hosted on GitHub Pages and uses Supabase for passwordless

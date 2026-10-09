@@ -5,6 +5,7 @@ import { confirmSheet, openSheet, stepper } from "../sheet.js";
 import { icon } from "../icons.js";
 
 function showActivitySheet(item, context) {
+  if (item.food) { location.hash = "#food"; context.toast("Edit food entries in the Food diary to keep calories and stock linked."); return; }
   const store = item.type === "purchase" ? "purchases" : "depletions";
   const error = el("p", { class: "confirm-error", role: "alert" });
   let save = null;

@@ -1,8 +1,9 @@
 // Keep every offline dependency in this release cache. Bump the version when
 // the asset set changes so activation removes stale application bundles.
-const CACHE = "pantry-loop-v1.6.0-merged-7";
+const CACHE = "pantry-loop-v1.6.0-food-1";
 const ASSETS = [
-  "./src/bootstrap.js?release=merged-7",
+  "./src/bootstrap.js?release=food-1",
+  "./src/nutrition.js", "./src/views/food.js",
   "./", "./index.html", "./app.css", "./manifest.webmanifest",
   "./src/main.js", "./src/ui.js", "./src/icons.js", "./src/sheet.js", "./src/auth.js", "./src/supabase-config.js", "./src/sync.js", "./src/tesco.js", "./src/confirmation.js", "./src/identification.js", "./src/db.js", "./src/barcode.js", "./src/inventory.js", "./src/scanner.js", "./src/lookup.js", "./src/list.js", "./src/export.js",
   "./src/views/scan.js", "./src/views/stock.js", "./src/views/list.js", "./src/views/catalogue.js", "./src/views/settings.js",

@@ -11,6 +11,7 @@ import { identifyBarcode, processLookupQueue } from "./lookup.js";
 import { renderScan } from "./views/scan.js";
 import { renderList } from "./views/list.js";
 import { renderStock } from "./views/stock.js";
+import { renderFood } from "./views/food.js";
 import { renderCatalogue } from "./views/catalogue.js";
 import { renderSettings } from "./views/settings.js";
 import { RepeatGate } from "./scanner.js";
@@ -21,8 +22,8 @@ const toastRegion = document.querySelector("#toast-region");
 const networkStatus = document.querySelector("#network-status");
 const offlineStatus = document.querySelector("#offline-status");
 const syncStatus = document.querySelector("#sync-status");
-const views = { scan: renderScan, list: renderList, stock: renderStock, catalogue: renderCatalogue, settings: renderSettings };
-const labels = { scan: "Scan", list: "Shopping list", stock: "In Stock", catalogue: "Catalogue", settings: "Settings" };
+const views = { scan: renderScan, list: renderList, stock: renderStock, food: renderFood, catalogue: renderCatalogue, settings: renderSettings };
+const labels = { scan: "Scan", list: "Shopping list", stock: "In Stock", food: "Food diary", catalogue: "Catalogue", settings: "Settings" };
 let cleanup = null;
 let activeRoute = null;
 let savingBlocked = false;
@@ -132,7 +133,7 @@ function checkForUpdate() {
 async function registerWorker() {
   if (!("serviceWorker" in navigator)) { offlineStatus.textContent = "Offline unavailable"; return; }
   try {
-    const registration = await navigator.serviceWorker.register("./sw.js?release=merged-7", { scope: "./", updateViaCache: "none" });
+    const registration = await navigator.serviceWorker.register("./sw.js?release=food-1", { scope: "./", updateViaCache: "none" });
     await navigator.serviceWorker.ready;
     serviceWorkerRegistration = registration;
     waitingWorker = registration.waiting;
@@ -192,6 +193,7 @@ async function reviewCode(detection) {
   const write = async chosenQty => {
     const editable = ["name", "brand", "size", "price", "category"].filter(field => details[field] !== null && details[field] !== undefined && details[field] !== "");
     const productPatch = {
+      ...(details.nutrition ? { nutrition: details.nutrition } : {}),
       ...Object.fromEntries(["name", "brand", "size", "price", "currency", "imageUrl", "category"].filter(field => details[field] != null).map(field => [field, details[field]])),
       lookup: { state: details.source === "Manual entry" || details.source === "Vision identification" ? "manual" : "resolved", source: details.source, checkedAt: new Date().toISOString(), nextRetryAt: null }
     };

@@ -9,6 +9,7 @@
     "test": "node --test"
   },
   "devDependencies": {
-    "@supabase/supabase-js": "2.117.2"
+    "@supabase/supabase-js": "2.117.2",
+    "fake-indexeddb": "6.2.5"
   }
 }

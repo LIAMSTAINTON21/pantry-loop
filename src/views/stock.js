@@ -1,5 +1,6 @@
 import { getState, recordEvent, voidEvent } from "../db.js";
 import { el, empty, sectionTitle } from "../ui.js";
+import { displayAmount } from "../nutrition.js";
 
 // Show only positive replayed quantities; unknown or finished products remain
 // in the catalogue without implying that stock is on hand.
@@ -17,15 +18,16 @@ export async function renderStock(context) {
     const categoryLabel = product.category || "Uncategorised";
     if (categoryLabel !== currentCategory) { currentCategory = categoryLabel; group = el("div", { class: "aisle-group" }, [el("h3", { class: "aisle-label", text: categoryLabel })]); root.append(group); }
     let onHand = product.onHandQty;
-    const value = el("output", { text: String(onHand), "aria-label": `${onHand} on hand` });
-    const meta = el("p", { class: "meta", text: [product.size, product.brand].filter(Boolean).join(" · ") || "On hand" });
+    const value = el("output", { text: displayAmount(onHand), "aria-label": `${onHand} packs on hand` });
+    const stockText = () => product.nutrition ? `${displayAmount(onHand * product.nutrition.packSize)} ${product.nutrition.unit} left · ${product.brand ?? ""}` : [product.size, product.brand].filter(Boolean).join(" · ") || "On hand";
+    const meta = el("p", { class: "meta", text: stockText() });
     const row = el("article", { class: "list-item stock-item" });
     const record = async (type, button) => {
       button.disabled = true;
       try {
         const { event, product: updated } = await recordEvent({ type, barcode: product.barcode, barcodeFormat: product.barcodeFormat, qty: 1, source: "manual", sessionId: crypto.randomUUID() });
         onHand = Math.max(0, updated.onHandQty ?? 0);
-        value.textContent = String(onHand); value.setAttribute("aria-label", `${onHand} on hand`);
+        value.textContent = displayAmount(onHand); value.setAttribute("aria-label", `${onHand} packs on hand`); meta.textContent = stockText();
         row.classList.toggle("is-empty", onHand === 0); minus.disabled = onHand === 0;
         if (onHand === 0) meta.textContent = "Finished · added to your shopping list";
         const store = type === "purchase" ? "purchases" : "depletions";

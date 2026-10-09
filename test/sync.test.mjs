@@ -4,6 +4,7 @@ import assert from "node:assert/strict";
 globalThis.document = { baseURI: "http://localhost:8080/" };
 const { cloudBackupEnvelope, mergeBackups, restoreDeviceMeta } = await import("../src/sync.js");
 const { product, purchase, depletion } = await import("./fixtures.mjs");
+const { calculateMeal, dailyTotals } = await import("../src/nutrition.js");
 
 // These cases document merge rules for event corrections, product edits,
 // device-only metadata, and resets across competing snapshots.
@@ -11,6 +12,20 @@ const backup = (patch = {}) => ({
   appId: "pantry-loop", schemaVersion: 1, exportedAt: "2026-10-04T10:00:00Z",
   products: [product()], purchases: [], depletions: [],
   meta: [{ key: "schemaVersion", value: 1 }, { key: "nextSeq", value: 1 }], ...patch
+});
+
+test("food nutrition stays attached to fractional stock through cloud merge and removal", () => {
+  const profile = { unit: "ml", basis: 100, packSize: 1000, kcal: 50, protein: null, carbs: null, fat: null };
+  const { qty, totals } = calculateMeal(profile, 250);
+  const food = { name: "Milk", date: "2026-10-04", amount: 250, profile, totals };
+  const event = depletion("food-one", 2, "4006381333931", "2026-10-04T12:00:00Z", qty, { food });
+  const base = backup({ purchases: [purchase("pack", 1, "4006381333931", "2026-10-03")] });
+  const local = { ...base, depletions: [event] };
+  const merged = mergeBackups(base, local);
+  assert.equal(merged.depletions[0].qty, 0.25);
+  assert.equal(dailyTotals(merged.depletions, "2026-10-04").kcal.value, 125);
+  const removed = { ...merged, depletions: [{ ...merged.depletions[0], voidedAt: "2026-10-04T14:00:00Z" }] };
+  assert.equal(dailyTotals(mergeBackups(removed, local).depletions, "2026-10-04").kcal.value, 0);
 });
 
 test("merges event IDs and normalizes colliding sequences", () => {

@@ -11,7 +11,7 @@ test("primary navigation has exactly one link per app route", async () => {
   const html = await read("index.html");
   const routes = [...html.matchAll(/data-route="([^"]+)"/g)].map(match => match[1]);
   assert.equal(routes.length, new Set(routes).size);
-  assert.deepEqual([...routes].sort(), ["catalogue", "list", "scan", "settings", "stock"]);
+  assert.deepEqual([...routes].sort(), ["catalogue", "food", "list", "scan", "settings", "stock"]);
 });
 
 test("offline release identifiers match and all cached assets exist", async () => {
@@ -22,5 +22,5 @@ test("offline release identifiers match and all cached assets exist", async () =
   assert.ok(worker.includes(`bootstrap.js?release=${release}`));
   const assets = [...worker.matchAll(/"(\.\/[^"\n]*)"/g)].map(match => match[1]);
   for (const path of assets) await access(new URL(path.split("?")[0], root));
-  for (const path of ["./src/views/stock.js", "./src/icons.js", "./src/sheet.js"]) assert.ok(assets.includes(path));
+  for (const path of ["./src/views/stock.js", "./src/icons.js", "./src/sheet.js", "./src/nutrition.js", "./src/views/food.js"]) assert.ok(assets.includes(path));
 });

@@ -19,7 +19,7 @@ export function replayStock(barcode, purchases = [], depletions = []) {
   for (const event of events) {
     // A depletion larger than known stock bottoms out at zero; it never creates
     // negative stock that could distort later suggestions.
-    quantity = event.kind === "purchase" ? quantity + event.qty : Math.max(0, quantity - event.qty);
+    quantity = Math.round((event.kind === "purchase" ? quantity + event.qty : Math.max(0, quantity - event.qty)) * 1e8) / 1e8;
     lastEvent = event;
   }
   return {
