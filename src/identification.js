@@ -140,13 +140,30 @@ export function showIdentificationFallback({ barcode = null, barcodeFormat = nul
         showLoading(canvas.toDataURL("image/jpeg", 0.78));
       } });
       capture.disabled = true;
+      let countdown = null; let countdownStarted = false;
+      const autoCapture = () => {
+        if (countdownStarted) return;
+        countdownStarted = true;
+        let remaining = 3;
+        const tick = () => {
+          if (version !== screenVersion || !barcodeScanner) return;
+          if (remaining === 0) {
+            if (!video.videoWidth) { countdown = setTimeout(tick, 300); return; }
+            capture.click(); return;
+          }
+          status.textContent = `Hold the front label in view · reading in ${remaining}…`; remaining -= 1;
+          countdown = setTimeout(tick, 1000);
+        };
+        tick();
+      };
       const photo = el("input", { type: "file", accept: "image/*", capture: "environment", class: "sr-only", "aria-label": "Choose product photo" });
       photo.addEventListener("change", () => { if (photo.files?.[0]) showLoading(photo.files[0]); });
       photo.addEventListener("cancel", () => { if (!finished && version === screenVersion) showBarcodeScanner(draft, aiMode); });
       panel.replaceChildren(el("p", { class: "confirm-kicker", role: "status", text: aiMode ? "AI MODE" : "BARCODE + PRODUCT LABEL" }), el("h1", { id: "identify-title", text: aiMode ? "Show the front product label" : "Scan, then show the label" }), el("div", { class: "identify-camera" }, [video, el("div", { class: "aim", "aria-hidden": "true" })]), codeStatus, status, capture, photo, el("button", { type: "button", class: "secondary", text: "Take or choose a photo", onclick: () => { stopBarcodeScanner(); photo.click(); } }), el("button", { type: "button", class: "identify-back", text: "Back to product details", onclick: () => showForm(draft, { code: barcode, format: barcodeFormat }) }));
       try {
         barcodeScanner = new CameraScanner(video, async detection => {
-          if (version !== screenVersion || detection.code === barcode) return;
+          // In AI mode the barcode is already fixed by the main scan; don't let other codes in view replace it.
+          if (version !== screenVersion || detection.code === barcode || aiMode) return;
           barcode = detection.code; barcodeFormat = detection.format;
           codeStatus.textContent = `Barcode saved: ${barcode}`;
           status.textContent = "Barcode found. Checking product details…";
@@ -155,12 +172,18 @@ export function showIdentificationFallback({ barcode = null, barcodeFormat = nul
           if (result.match) draft = { ...draft, ...result.match };
           else if (detection.image) { showLoading(detection.image); return; }
           status.textContent = "Now show the front label and tap Read name and brand.";
-        }, state => { if (version === screenVersion && (state === "native" || state === "fallback")) { capture.disabled = false; status.textContent = "Keep the product name and brand clearly visible when taking the picture."; } });
+        }, state => {
+          if (version !== screenVersion || !(state === "native" || state === "fallback")) return;
+          capture.disabled = false;
+          if (aiMode) autoCapture();
+          else status.textContent = "Keep the product name and brand clearly visible when taking the picture.";
+        });
         await barcodeScanner.start({ forceFallback: settings.forceFallback });
       } catch (error) {
         if (version !== screenVersion) return;
         stopBarcodeScanner();
         status.textContent = error.name === "NotAllowedError" ? "Camera permission was denied. Go back and type the product details." : error.message;
+        if (aiMode) { aiMode = false; toast(status.textContent, { error: true }); showOptions(); }
       }
     };
 

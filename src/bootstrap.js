@@ -4,7 +4,7 @@
 // This also upgrades phones still running the pre-authentication service worker.
 async function prepareOfflineBundle() {
   if (!("serviceWorker" in navigator) || !navigator.onLine) return;
-  const registration = await navigator.serviceWorker.register("./sw.js?release=scan-4", { scope: "./", updateViaCache: "none" });
+  const registration = await navigator.serviceWorker.register("./sw.js?release=merged-7", { scope: "./", updateViaCache: "none" });
   await registration.update();
   const worker = registration.installing || registration.waiting;
   if (!worker) return;

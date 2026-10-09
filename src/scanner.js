@@ -74,7 +74,10 @@ export class CameraScanner {
   constructor(video, onCode, onState, gate = new RepeatGate()) {
     this.video = video; this.onCode = onCode; this.onState = onState;
     this.gate = gate; this.running = false; this.inFlight = false; this.timer = null; this.lastVisible = []; this.generation = 0;
+    this.pauseReasons = new Set();
   }
+  get paused() { return this.pauseReasons.size > 0; }
+  setPaused(reason, paused) { if (paused) this.pauseReasons.add(reason); else this.pauseReasons.delete(reason); }
   async start({ forceFallback = false } = {}) {
     // Every stop invalidates pending permission/decoder promises. A late camera
     // permission result releases its stream instead of reviving a closed view.
@@ -142,11 +145,11 @@ export class CameraScanner {
     const generation = this.generation;
     this.timer = setTimeout(async () => {
       if (generation !== this.generation || !this.running) return;
-      if (this.inFlight || !isScannerVisible(this.video)) return this.loop();
+      if (this.inFlight || this.paused || !isScannerVisible(this.video)) return this.loop();
       this.inFlight = true;
       try {
         const detections = await this.decode();
-        if (generation !== this.generation || !this.running || !isScannerVisible(this.video)) return;
+        if (generation !== this.generation || !this.running || this.paused || !isScannerVisible(this.video)) return;
         const valid = [];
         for (const detection of detections) {
           try { valid.push({ ...detection, code: normalizeBarcode(detection.rawValue, detection.format) }); } catch { /* ignore non-retail results */ }

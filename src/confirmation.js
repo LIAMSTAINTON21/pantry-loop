@@ -9,7 +9,7 @@ function actionButton(symbol, label, className, handler) {
   ]);
 }
 
-export function showScanConfirmation({ name, message, mode, qty = 1, onRename, onRemove, onConfirm, removalMessage = "This scan will not be saved to your session." }) {
+export function showScanConfirmation({ name, message, mode, qty = 1, aiIdentified = false, onRename, onRemove, onConfirm, removalMessage = "This scan will not be saved to your session." }) {
   return new Promise(resolve => {
     const dialog = el("dialog", { class: "scan-confirmation", "aria-labelledby": "confirmation-title" });
     const panel = el("div", { class: "scan-confirmation-panel" });
@@ -48,8 +48,9 @@ export function showScanConfirmation({ name, message, mode, qty = 1, onRename, o
       if (busy || finished) return;
       const error = el("p", { class: "confirm-error", role: "alert" });
       panel.replaceChildren(
-        el("div", { class: "confirm-icon confirm-icon-edit", text: "×", "aria-hidden": "true" }),
-        el("h1", { id: "confirmation-title", class: "confirm-error", text: `Remove ${currentName}?` }),
+        el("div", { class: "confirm-icon confirm-icon-remove", text: "−", "aria-hidden": "true" }),
+        el("p", { class: "confirm-kicker confirm-kicker-danger", text: "REMOVE ITEM" }),
+        el("h1", { id: "confirmation-title", class: "confirm-danger-title", text: `Remove ${currentName}?` }),
         el("p", { class: "confirm-message", text: removalMessage }),
         error,
         el("div", { class: "confirm-actions" }, [
@@ -64,7 +65,7 @@ export function showScanConfirmation({ name, message, mode, qty = 1, onRename, o
 
     const showReview = () => {
       const error = el("p", { class: "confirm-error", role: "alert" });
-      const count = el("output", { text: quantity, "aria-live": "polite", "aria-label": "Quantity" });
+      const count = el("output", { class: "confirm-qty-value", text: quantity, "aria-live": "polite", "aria-label": "Quantity" });
       const updateQuantity = delta => {
         if (busy || finished) return;
         quantity = Math.max(0, Math.min(Number.MAX_SAFE_INTEGER, quantity + delta));
@@ -72,17 +73,20 @@ export function showScanConfirmation({ name, message, mode, qty = 1, onRename, o
         minus.disabled = quantity === 0;
         plus.disabled = quantity === Number.MAX_SAFE_INTEGER;
       };
-      const minus = el("button", { type: "button", text: "−", "aria-label": "Decrease quantity", onclick: () => updateQuantity(-1) });
-      const plus = el("button", { type: "button", text: "+", "aria-label": "Increase quantity", onclick: () => updateQuantity(1) });
+      const minus = el("button", { type: "button", class: "confirm-qty-step", text: "−", "aria-label": "Decrease quantity", onclick: () => updateQuantity(-1) });
+      const plus = el("button", { type: "button", class: "confirm-qty-step", text: "+", "aria-label": "Increase quantity", onclick: () => updateQuantity(1) });
       minus.disabled = quantity === 0;
       plus.disabled = quantity === Number.MAX_SAFE_INTEGER;
       panel.replaceChildren(
         el("div", { class: "confirm-icon confirm-icon-tick", text: "✓", "aria-hidden": "true" }),
         el("p", { class: "confirm-kicker", text: mode === "purchase" ? "CONFIRM PURCHASE" : "CONFIRM FINISHED ITEMS" }),
+        // Native replaceChildren stringifies false; omit the badge entirely for ordinary scans.
+        ...(aiIdentified ? [el("p", { class: "ai-badge", text: "AI MODE · CHECK THE NAME" })] : []),
         el("h1", { id: "confirmation-title", text: currentName }),
         el("p", { class: "confirm-message", text: message }),
-        el("p", { text: "Quantity" }),
-        el("div", { class: "quantity", role: "group", "aria-label": "Item quantity" }, [minus, count, plus]),
+        el("div", { class: "confirm-qty", role: "group", "aria-label": "Item quantity" }, [
+          minus, el("div", { class: "confirm-qty-readout" }, [count, el("span", { class: "confirm-qty-label", text: mode === "purchase" ? "packs bought" : "packs finished" })]), plus
+        ]),
         error,
         el("div", { class: "confirm-actions" }, [
           actionButton("✓", "Correct — continue", "confirm-keep", () => {

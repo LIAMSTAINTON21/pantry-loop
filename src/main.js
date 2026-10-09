@@ -1,16 +1,18 @@
 // Coordinate authentication, routes, barcode review, and local saves. The database
 // is the source of durable stock; sessionRows is only this tab's editable scan list.
-import { correctEvent, getMeta, getSettings, localDate, openDatabase, recordEvent, saveProduct, setMeta, updateSettings, voidEvent } from "./db.js";
+import { getMeta, setEventsQuantity, getSettings, localDate, openDatabase, recordEvent, saveProduct, setMeta, updateSettings } from "./db.js";
 import { requireAuthentication } from "./auth.js";
 import { startSynchronization, synchronizeNow } from "./sync.js";
 import { showScanConfirmation, showRemovalConfirmation } from "./confirmation.js";
+import { el } from "./ui.js";
+import { icon } from "./icons.js";
 import { showIdentificationFallback } from "./identification.js";
 import { identifyBarcode, processLookupQueue } from "./lookup.js";
 import { renderScan } from "./views/scan.js";
 import { renderList } from "./views/list.js";
+import { renderStock } from "./views/stock.js";
 import { renderCatalogue } from "./views/catalogue.js";
 import { renderSettings } from "./views/settings.js";
-import { renderStock } from "./views/stock.js";
 import { RepeatGate } from "./scanner.js";
 
 const app = document.querySelector("#app");
@@ -37,6 +39,46 @@ const sessionRows = new Map();
 const scanGate = new RepeatGate();
 let routeVersion = 0;
 
+function sessionMessage(type, product, settings) {
+  if (type === "purchase") return `${product.onHandQty} estimated on hand`;
+  if (product.onHandQty > 0) return `Finished one · ${product.onHandQty} left`;
+  return product.neverSuggest ? "Suggestions off" : product.snoozeUntil && product.snoozeUntil > localDate(settings.timezone) ? "Snoozed" : "Ran out · added to list";
+}
+
+async function refreshSessionMessage(row) {
+  const product = await (await openDatabase()).get("products", row.code);
+  if (product) row.message = sessionMessage(row.type, product, await getSettings());
+}
+
+async function editSessionRow(key, nextQty) {
+  const row = sessionRows.get(key); if (!row) return;
+  const result = await setEventsQuantity(row.type === "purchase" ? "purchases" : "depletions", row.ids, Math.max(0, nextQty));
+  if (!result.ids.length) sessionRows.delete(key);
+  else { row.ids = result.ids; row.qty = result.qty; await refreshSessionMessage(row); }
+  window.dispatchEvent(new Event("sessionchange"));
+}
+
+// One header indicator instead of three chips; the full detail stays available in the status panel.
+const statusSummary = document.querySelector("#status-summary");
+const statusPanel = document.querySelector("#status-panel");
+function updateStatusSummary() {
+  const sync = syncStatus.textContent; const offline = !navigator.onLine;
+  const [state, label] = offline ? ["offline", "Offline"]
+    : sync === "Syncing…" ? ["busy", "Syncing"]
+    : sync === "Sync unavailable" ? ["warn", "Sync issue"]
+    : sync === "Cloud synced" ? ["ok", "Synced"] : ["busy", "Starting"];
+  statusSummary.dataset.state = state;
+  const labelNode = document.querySelector("#status-label");
+  if (labelNode.textContent !== label) labelNode.textContent = label; // live region: only announce real changes
+  statusSummary.setAttribute("aria-label", `Status: ${label}. Show details`);
+}
+new MutationObserver(updateStatusSummary).observe(statusPanel, { subtree: true, characterData: true, childList: true });
+const setStatusOpen = open => { statusPanel.hidden = !open; statusSummary.setAttribute("aria-expanded", String(open)); };
+statusSummary.addEventListener("click", event => { event.stopPropagation(); setStatusOpen(statusPanel.hidden); });
+document.addEventListener("click", event => { if (!statusPanel.hidden && !statusPanel.contains(event.target)) setStatusOpen(false); });
+document.addEventListener("keydown", event => { if (event.key === "Escape" && !statusPanel.hidden) { setStatusOpen(false); statusSummary.focus(); } });
+for (const link of document.querySelectorAll(".bottom-nav a")) link.querySelector("span[aria-hidden]")?.replaceWith(icon(link.dataset.route));
+
 function toast(message, { error = false, action = null, actionLabel = "Undo", duration = 10000 } = {}) {
   toastRegion.replaceChildren();
   const node = document.createElement("div"); node.className = `toast${error ? " error" : ""}`;
@@ -46,21 +88,56 @@ function toast(message, { error = false, action = null, actionLabel = "Undo", du
 }
 
 function updateNetwork() {
-  networkStatus.textContent = navigator.onLine ? "Online" : "Offline";
+  networkStatus.textContent = navigator.onLine ? "Online" : "Offline"; updateStatusSummary();
   if (appAuthenticated && navigator.onLine) processLookupQueue();
 }
 
+let updateDialog = null;
+function applyUpdate() {
+  reloadForUpdate = true; cleanup?.(); cleanup = null;
+  waitingWorker.postMessage({ type: "SKIP_WAITING" });
+  // controllerchange normally reloads; reload anyway if it never arrives.
+  setTimeout(() => location.reload(), 4000);
+}
+
+// Updates are required: once a new version is installed the app is blocked until the user taps Update.
+// It waits only while a scan is being confirmed or an unsaved item needs resolving, so nothing is lost.
 function offerUpdate() {
-  if (!waitingWorker || activeRoute === "scan" || savingBlocked) return;
-  toast("An app update is ready", { actionLabel: "Update", duration: 0, action: () => { reloadForUpdate = true; cleanup?.(); waitingWorker.postMessage({ type: "SKIP_WAITING" }); } });
+  if (!waitingWorker || updateDialog || savingBlocked || confirmationOpen) return;
+  const action = el("button", { type: "button", class: "primary", text: "Update now" });
+  updateDialog = el("dialog", { class: "update-dialog", "aria-labelledby": "update-title", "aria-describedby": "update-message" }, [
+    el("div", { class: "update-panel" }, [
+      el("div", { class: "confirm-icon confirm-icon-tick", text: "↻", "aria-hidden": "true" }),
+      el("p", { class: "confirm-kicker", text: "UPDATE REQUIRED" }),
+      el("h1", { id: "update-title", text: "A new version is ready" }),
+      el("p", { id: "update-message", class: "confirm-message", text: "Update to keep using Pantry Loop. Your pantry, lists and scans stay on this phone." }),
+      action
+    ])
+  ]);
+  action.addEventListener("click", () => { action.disabled = true; action.textContent = "Updating…"; applyUpdate(); });
+  updateDialog.addEventListener("cancel", event => event.preventDefault());
+  // Browsers may still close a modal on Escape or the Android back gesture; reopen it so the update stays required.
+  updateDialog.addEventListener("close", () => { if (!reloadForUpdate) updateDialog.showModal(); });
+  document.body.append(updateDialog); updateDialog.showModal(); action.focus();
+}
+
+let serviceWorkerRegistration = null;
+let lastUpdateCheck = 0;
+function checkForUpdate() {
+  if (!serviceWorkerRegistration || !navigator.onLine || Date.now() - lastUpdateCheck < 60000) return;
+  lastUpdateCheck = Date.now();
+  serviceWorkerRegistration.update().catch(() => {});
 }
 
 async function registerWorker() {
   if (!("serviceWorker" in navigator)) { offlineStatus.textContent = "Offline unavailable"; return; }
   try {
-    const registration = await navigator.serviceWorker.register("./sw.js?release=scan-4", { scope: "./", updateViaCache: "none" });
+    const registration = await navigator.serviceWorker.register("./sw.js?release=merged-7", { scope: "./", updateViaCache: "none" });
     await navigator.serviceWorker.ready;
+    serviceWorkerRegistration = registration;
     waitingWorker = registration.waiting;
+    if (waitingWorker && navigator.serviceWorker.controller) offerUpdate();
+    setInterval(checkForUpdate, 30 * 60000);
     offlineStatus.textContent = navigator.serviceWorker.controller ? "Ready offline" : "Reload once for offline";
     navigator.serviceWorker.addEventListener("controllerchange", () => { offlineStatus.textContent = "Ready offline"; if (reloadForUpdate) location.reload(); });
     registration.addEventListener("updatefound", () => {
@@ -82,6 +159,7 @@ async function acceptCode(detection) {
 async function finishConfirmation() {
   confirmationOpen = false;
   window.dispatchEvent(new Event("sessionchange"));
+  offerUpdate();
   if (resumeScanAfterConfirmation && !document.hidden) {
     resumeScanAfterConfirmation = false;
     await renderRoute();
@@ -104,7 +182,7 @@ async function reviewCode(detection) {
     if (!details) {
       if (activeRoute === "scan" && cleanup) { cleanup(); cleanup = null; scannerPausedForFallback = true; }
       resumeScanAfterConfirmation = scannerPausedForFallback;
-      details = await showIdentificationFallback({ barcode: detection.code, barcodeFormat: detection.format, initialImage: detection.image, autoIdentify: true, settings, toast });
+      details = await showIdentificationFallback({ barcode: detection.code, barcodeFormat: detection.format, initialImage: detection.image, autoAi: settings.onlineLookup && navigator.onLine, settings, toast });
     }
     if (!details) return;
     // The identification dialog can scan a corrected barcode; save its details
@@ -120,32 +198,36 @@ async function reviewCode(detection) {
     return recordEvent({ type, barcode: detection.code, barcodeFormat: detection.format, qty: chosenQty, source: detection.source ?? "scan", sessionId, listId, actionId, name: details.name, productPatch, userFields: details.source === "Manual entry" ? editable : [] });
   };
   await showScanConfirmation({
-    name: details.name, qty, mode: type,
+    name: details.name, qty, mode: type, aiIdentified: details.source === "Vision identification",
     message: type === "purchase" ? "Choose how many packs to add to your stock." : "Choose how many packs you have used up.",
     onRename: async name => { details = { ...details, name, source: "Manual entry" }; },
     onRemove: async () => {},
     onConfirm: async chosenQty => {
       const result = await write(chosenQty);
-      sessionRows.set(result.event.id, { id: result.event.id, barcode: detection.code, type, name: result.product.name, qty: result.event.qty,
-        message: type === "purchase" ? "Added to stock" : "Used up" });
+      const key = `${type}:${detection.code}`;
+      const row = sessionRows.get(key) ?? { key, code: detection.code, name: result.product.name, qty: 0, ids: [], type };
+      if (!row.ids.includes(result.event.id)) { row.qty += result.event.qty; row.ids.push(result.event.id); }
+      for (const other of sessionRows.values()) if (other.code === detection.code) other.name = result.product.name;
+      row.name = result.product.name;
+      row.message = sessionMessage(type, result.product, settings);
+      sessionRows.set(key, row);
       try { navigator.vibrate?.(55); } catch { /* feedback must never make a saved scan appear to fail */ }
     }
   });
 }
 
 async function editSessionItem(item, removeOnly = false) {
-  // Corrections replace one event in history; they do not overwrite total stock.
+  // Corrections affect this session's grouped events, preserving earlier stock.
   if (confirmationOpen) return;
   confirmationOpen = true;
-  const store = item.type === "purchase" ? "purchases" : "depletions";
-  const remove = async () => { await voidEvent(store, item.id); sessionRows.delete(item.id); };
+  const remove = async () => editSessionRow(item.key, 0);
   try {
     if (removeOnly) { if (await showRemovalConfirmation(item.name, "Remove only this saved session entry? Earlier stock is kept.")) await remove(); }
     else await showScanConfirmation({ name: item.name, qty: item.qty, mode: item.type, message: "Edit this saved session entry. Zero removes this entry, not earlier stock.",
       removalMessage: "This saved entry will be removed from your stock history. Earlier entries are kept.",
-      onRename: async name => { await saveProduct(item.barcode, { name }, ["name"]); for (const row of sessionRows.values()) if (row.barcode === item.barcode) row.name = name; },
+      onRename: async name => { await saveProduct(item.code, { name }, ["name"]); for (const row of sessionRows.values()) if (row.code === item.code) row.name = name; },
       onRemove: remove,
-      onConfirm: async qty => { if (qty === item.qty) return; const replacement = await correctEvent(store, item.id, qty); sessionRows.delete(item.id); sessionRows.set(replacement.id, { ...item, id: replacement.id, qty }); }
+      onConfirm: async qty => { if (qty !== item.qty) await editSessionRow(item.key, qty); }
     });
   } catch (error) { toast(error.message || "Could not change this item", { error: true }); }
   finally { await finishConfirmation(); }
@@ -182,6 +264,7 @@ async function renderRoute() {
     settings, activeDraft, toast, acceptCode, identifyWithoutBarcode, editSessionItem, scanGate,
     setMode: async mode => { await updateSettings({ lastMode: mode }); await setMeta("activeSession", { id: sessionId, startedAt: (await getMeta("activeSession"))?.startedAt ?? new Date().toISOString(), mode }); settings.lastMode = mode; },
     sessionEvents: () => [...sessionRows.values()],
+    editSessionRow,
     today: (timezone, date) => localDate(timezone, date),
     refresh: renderRoute,
     finishScanDraft: async () => {
@@ -217,6 +300,7 @@ async function checkBackupReminder() {
 }
 
 const handleVisibilityChange = () => {
+  if (!document.hidden) checkForUpdate();
   if (!appAuthenticated) return;
   if (document.hidden) { if (activeRoute === "scan") { cleanup?.(); if (confirmationOpen) resumeScanAfterConfirmation = true; } }
   else if (activeRoute === "scan") { if (confirmationOpen) resumeScanAfterConfirmation = true; else renderRoute(); }
