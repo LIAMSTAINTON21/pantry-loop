@@ -3,10 +3,11 @@ import assert from "node:assert/strict";
 import "fake-indexeddb/auto";
 import "../vendor/idb-8.0.3.umd.js";
 import { calculateMeal, nutritionFromOFF, dailyTotals } from "../src/nutrition.js";
-import { recordEvent, recordMeal, getState, voidEvent, clearLocalData, correctEvent } from "../src/db.js";
+import { bindDatabaseAccount, recordEvent, recordMeal, getState, voidEvent, clearLocalData, correctEvent } from "../src/db.js";
 import { buildBackup, validateBackup } from "../src/export.js";
 
 const profile = { unit: "g", basis: 100, packSize: 500, kcal: 200, protein: 10, carbs: null, fat: 5 };
+await bindDatabaseAccount({ id: "nutrition-test", email: "test@example.com" });
 test("mass, volume and portions use only the chosen unit", () => {
   for (const unit of ["g", "ml", "portion"]) {
     const result = calculateMeal({ ...profile, unit }, 75);

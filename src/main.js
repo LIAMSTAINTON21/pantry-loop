@@ -1,6 +1,6 @@
 // Coordinate authentication, routes, barcode review, and local saves. The database
 // is the source of durable stock; sessionRows is only this tab's editable scan list.
-import { getMeta, setEventsQuantity, getSettings, localDate, openDatabase, recordEvent, saveProduct, setMeta, updateSettings } from "./db.js";
+import { bindDatabaseAccount, releaseDatabaseAccount, getMeta, setEventsQuantity, getSettings, localDate, openDatabase, recordEvent, saveProduct, setMeta, updateSettings } from "./db.js";
 import { requireAuthentication } from "./auth.js";
 import { startSynchronization, synchronizeNow } from "./sync.js";
 import { showScanConfirmation, showRemovalConfirmation } from "./confirmation.js";
@@ -133,7 +133,7 @@ function checkForUpdate() {
 async function registerWorker() {
   if (!("serviceWorker" in navigator)) { offlineStatus.textContent = "Offline unavailable"; return; }
   try {
-    const registration = await navigator.serviceWorker.register("./sw.js?release=food-1", { scope: "./", updateViaCache: "none" });
+    const registration = await navigator.serviceWorker.register("./sw.js?release=auth-2", { scope: "./", updateViaCache: "none" });
     await navigator.serviceWorker.ready;
     serviceWorkerRegistration = registration;
     waitingWorker = registration.waiting;
@@ -318,10 +318,14 @@ const stopAppActivity = async () => {
   window.removeEventListener("online", updateNetwork); window.removeEventListener("offline", updateNetwork);
   window.removeEventListener("hashchange", renderRoute);
   document.removeEventListener("visibilitychange", handleVisibilityChange);
-  await stopSynchronization(); cleanup?.();
+  cleanup?.(); cleanup = null;
+  // Dialogs live outside #app; remove them as well as route content on sign-out.
+  document.querySelectorAll("dialog").forEach(dialog => { dialog.close(); dialog.remove(); });
+  app.replaceChildren(); toastRegion.replaceChildren(); sessionRows.clear();
+  await stopSynchronization();
 };
-window.addEventListener("pantrylogout", stopAppActivity);
-await requireAuthentication({ beforeLogout: () => prepareLogout() });
+window.addEventListener("pantrylogout", () => { releaseDatabaseAccount(); stopAppActivity(); });
+await requireAuthentication({ beforeLogout: () => prepareLogout(), beforeUnlock: bindDatabaseAccount });
 appAuthenticated = true;
 window.addEventListener("online", updateNetwork); window.addEventListener("offline", updateNetwork); updateNetwork();
 window.addEventListener("hashchange", renderRoute);

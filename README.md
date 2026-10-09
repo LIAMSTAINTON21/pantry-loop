@@ -34,6 +34,28 @@ sync are not included. Open Food Facts data is attributed in the UI (ODbL).
 
 ## Hosted phone app
 
+### Account and route protection
+
+On startup, all app routes remain hidden and inert until Supabase Auth verifies
+the user with `getUser`, the existing `is_allowed_account` RPC grants access, and
+that account's local database is selected. **Opening the app now requires an
+internet connection**; cached session details alone do not unlock it. Once opened,
+local edits can still work through a temporary network outage.
+
+Each new account uses a database named by its authenticated user ID. Only the
+original server-verified, email-confirmed owner reuses the existing legacy cache;
+other accounts neither read nor import it. Sign-out/account switches lock routes,
+remove private dialogs and revoke database access without deleting unsynced data.
+Sync checks that the current session matches the selected database before writing
+or applying snapshots. These browser protections complement (do not replace)
+the server's `auth.uid() = user_id` row-level security. Browser storage is not
+encrypted against someone with access to the device's browser profile/devtools.
+
+New accounts still need provisioning in Supabase Auth plus the private database
+allowlist. No new account is enabled by this frontend change. The photo-identify
+function retains its original single-email restriction until separately updated;
+do not claim new accounts have AI access or change its spending caps implicitly.
+
 The production app is hosted on GitHub Pages and uses Supabase for passwordless
 email sign-in, owner-only cloud synchronization, and the protected product-photo
 function. The OpenAI key and approved email are encrypted Supabase function

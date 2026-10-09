@@ -5,7 +5,12 @@ import { calculateMeal, validateFood } from "./nutrition.js";
 
 export const APP_ID = "pantry-loop";
 export const SCHEMA_VERSION = 1;
-const DB_NAME = "pantry-loop-data";
+const LEGACY_DB_NAME = "pantry-loop-data";
+// Only the original, server-verified owner may reuse the pre-account cache.
+// Other accounts always start in their own database; no old data is copied/deleted.
+const LEGACY_OWNER_HASH = "cb324df3465be7f5779dbf7fded73b6668ab34a919c6d6b4862c1c7edb230992";
+let databaseName = null;
+let databaseAccountId = null;
 const STORES = ["products", "purchases", "depletions", "meta"];
 let databasePromise;
 let generation = 0;
@@ -14,8 +19,8 @@ let changeChannel = null;
 
 function ensureChangeChannel() {
   // Notify other tabs, which keep their own database connection and sync version.
-  if (changeChannel || typeof window === "undefined" || typeof BroadcastChannel === "undefined") return changeChannel;
-  changeChannel = new BroadcastChannel("pantry-loop-data-changes");
+  if (!databaseName || changeChannel || typeof window === "undefined" || typeof BroadcastChannel === "undefined") return changeChannel;
+  changeChannel = new BroadcastChannel(`${databaseName}-changes`);
   changeChannel.addEventListener("message", () => {
     dataChangeVersion += 1;
     window.dispatchEvent(new Event("pantry:data-changed"));
@@ -42,11 +47,34 @@ const defaultSettings = {
 
 export function getDatabaseGeneration() { return generation; }
 export function getDataChangeVersion() { return dataChangeVersion; }
+export function getDatabaseAccountId() { return databaseAccountId; }
+
+export async function bindDatabaseAccount(user) {
+  if (!user?.id || !/^[a-zA-Z0-9-]{1,128}$/.test(user.id)) throw new Error("A verified account is required.");
+  if (databaseAccountId && databaseAccountId !== user.id) throw new Error("Account changed. Reload before opening another pantry.");
+  const startingGeneration = generation;
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(String(user.email ?? "").trim().toLowerCase()));
+  if (startingGeneration !== generation) throw new Error("Sign-in changed while opening the pantry.");
+  if (databaseAccountId && databaseAccountId !== user.id) throw new Error("Account changed. Reload before opening another pantry.");
+  const hash = [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, "0")).join("");
+  databaseAccountId = user.id;
+  databaseName = user.email_confirmed_at && hash === LEGACY_OWNER_HASH ? LEGACY_DB_NAME : `${LEGACY_DB_NAME}-user-${user.id}`;
+}
+
+export async function releaseDatabaseAccount() {
+  // Revoke access synchronously, even while an older connection is still opening.
+  const pending = databasePromise;
+  databasePromise = null; databaseName = null; databaseAccountId = null;
+  generation++; dataChangeVersion++; changeChannel?.close(); changeChannel = null;
+  try { (await pending)?.close(); } catch { /* failed opening needs no cleanup */ }
+}
 
 export async function openDatabase() {
+  if (!databaseName || !databaseAccountId) throw new Error("Sign in before opening pantry data.");
+  const openingGeneration = generation;
   // Reuse one connection, creating stores only during the first schema upgrade.
   ensureChangeChannel();
-  databasePromise ??= globalThis.idb.openDB(DB_NAME, SCHEMA_VERSION, {
+  databasePromise ??= globalThis.idb.openDB(databaseName, SCHEMA_VERSION, {
     upgrade(db) {
       const products = db.createObjectStore("products", { keyPath: "barcode" });
       products.createIndex("lookupState", "lookup.state");
@@ -60,6 +88,7 @@ export async function openDatabase() {
     blocking() { databasePromise?.then(db => db.close()); databasePromise = null; }
   });
   const db = await databasePromise;
+  if (openingGeneration !== generation || !databaseAccountId) throw new Error("The pantry session has ended.");
   const tx = db.transaction("meta", "readwrite");
   const meta = tx.objectStore("meta");
   if (!await meta.get("schemaVersion")) await meta.put({ key: "schemaVersion", value: SCHEMA_VERSION });
@@ -334,7 +363,8 @@ export async function replaceAll(validated, { notify = true, expectedVersion = n
 export async function clearLocalData() {
   const db = await databasePromise;
   db?.close(); databasePromise = null; generation += 1;
-  await globalThis.idb.deleteDB(DB_NAME);
+  if (!databaseName) throw new Error("No signed-in account to clear.");
+  await globalThis.idb.deleteDB(databaseName);
   dataChangeVersion += 1;
 }
 

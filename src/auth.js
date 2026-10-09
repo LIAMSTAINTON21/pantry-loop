@@ -21,9 +21,14 @@ export function createAuthClient(clientPromise = getSupabaseClient()) {
     async session() {
       try {
         const client = await clientPromise;
-        const { data, error } = await client.auth.getSession();
-        if (error) return null;
-        return data?.session?.user ?? null;
+        // A cached token is not enough to unlock a private route. Verify it with
+        // Auth, then check the database allowlist (never user-editable metadata).
+        const { data, error } = await client.auth.getUser();
+        if (error || !data?.user?.id) return null;
+        const allowed = await client.rpc("is_allowed_account");
+        if (allowed.error || allowed.data !== true) return null;
+        const current = await client.auth.getSession();
+        return !current.error && current.data?.session?.user?.id === data.user.id ? data.user : null;
       }
       catch { return null; }
     },
@@ -54,7 +59,9 @@ export function createAuthClient(clientPromise = getSupabaseClient()) {
         const client = await clientPromise;
         const { data, error } = await client.auth.verifyOtp({ email: cleanEmail, token: cleanCode, type: "email" });
         if (error || !data?.user) throw new Error(GENERIC_VERIFY_ERROR);
-        return data.user;
+        const user = await this.session();
+        if (!user || user.id !== data.user.id) throw new Error(GENERIC_VERIFY_ERROR);
+        return user;
       } catch { throw new Error(GENERIC_VERIFY_ERROR); }
     },
 
@@ -66,10 +73,10 @@ export function createAuthClient(clientPromise = getSupabaseClient()) {
       } catch { return { ok: false }; }
     },
 
-    async onSignedOut(callback) {
+    async onSignedOut(callback, expectedUserId = () => null) {
       const client = await clientPromise;
       const { data } = client.auth.onAuthStateChange((event, session) => {
-        if (event === "SIGNED_OUT" || event === "USER_DELETED" || (event === "TOKEN_REFRESHED" && !session?.user)) callback();
+        if (event === "SIGNED_OUT" || event === "USER_DELETED" || (event === "TOKEN_REFRESHED" && !session?.user) || (expectedUserId() && session?.user?.id && session.user.id !== expectedUserId())) callback();
       });
       return () => data?.subscription?.unsubscribe?.();
     }
@@ -94,13 +101,16 @@ export function createAuthGate({
   fetchImpl = globalThis.fetch?.bind(globalThis),
   supabaseClient = getSupabaseClient(),
   protectedSelector = "[data-auth-protected]",
-  beforeLogout = async () => true
+  beforeLogout = async () => true,
+  beforeUnlock = async () => {}
 } = {}) {
   if (!documentRef) throw new Error("Authentication needs a document");
   const root = documentRef.querySelector("#auth-root");
   if (!root) throw new Error("Missing #auth-root");
   const client = createAuthClient(supabaseClient);
   let currentUser = null;
+  let pendingUserId = null;
+  let authRevision = 0;
   let loggingOut = false;
   let stopAuthWatcher = () => {};
   let resolveInitial;
@@ -119,11 +129,17 @@ export function createAuthGate({
   };
 
   const removeLogout = () => documentRef.querySelector("#auth-logout")?.remove();
-  const unlock = user => {
+  const unlock = async user => {
     if (!resolveInitial) {
       windowRef?.location?.reload?.();
       return;
     }
+    const revision = authRevision;
+    pendingUserId = user.id;
+    try { await beforeUnlock(user); }
+    catch { if (revision === authRevision) renderEmail("Could not open your private pantry. Please reload and sign in again."); return; }
+    if (revision !== authRevision) return;
+    pendingUserId = null;
     currentUser = user;
     root.hidden = true;
     root.replaceChildren();
@@ -187,7 +203,7 @@ export function createAuthGate({
       event.preventDefault();
       status.textContent = "Checking sign-in…"; status.classList.remove("error"); verify.disabled = true;
       const user = await client.session();
-      if (user) unlock(user);
+      if (user) await unlock(user);
       else {
         status.textContent = "Not signed in here yet. Open the email link in this browser, or continue in the browser it opened.";
         verify.disabled = false;
@@ -197,9 +213,10 @@ export function createAuthGate({
     verify.focus();
   };
 
-  const lock = (message = "") => renderEmail(message);
+  const lock = (message = "") => { authRevision++; renderEmail(message); windowRef?.dispatchEvent?.(new CustomEvent("pantrylogout")); };
 
   async function logout() {
+    authRevision++;
     loggingOut = true;
     showRoot();
     root.replaceChildren(element(documentRef, "section", { class: "auth-screen", "aria-label": "Signing out" }, [element(documentRef, "div", { class: "auth-card", text: "Signing out…" })]));
@@ -220,14 +237,18 @@ export function createAuthGate({
     root.hidden = false;
     root.replaceChildren(element(documentRef, "section", { class: "auth-screen", "aria-label": "Checking sign-in" }, [element(documentRef, "div", { class: "auth-card auth-checking", text: "Checking sign-in…" })]));
     stopAuthWatcher = await client.onSignedOut(() => {
-      if (loggingOut || !currentUser) return;
+      authRevision++;
+      if (loggingOut) return;
       showRoot();
       renderEmail("Your session ended. Sign in again to continue.");
       windowRef?.dispatchEvent?.(new CustomEvent("pantrylogout"));
-    });
+    }, () => currentUser?.id ?? pendingUserId);
+    const revision = authRevision;
     const user = await client.session();
-    if (user) unlock(user);
-    else renderEmail();
+    if (revision === authRevision) {
+      if (user) await unlock(user);
+      else renderEmail("Sign in with an approved account. An internet connection is needed to verify access.");
+    }
     return initialAuthentication;
   }
 

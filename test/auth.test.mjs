@@ -11,7 +11,9 @@ function mockClient() {
   return {
     calls,
     user,
+    rpc: async name => ({ data: name === "is_allowed_account", error: null }),
     auth: {
+      getUser: async () => ({ data: { user }, error: null }),
       getSession: async () => ({ data: { session: { user } }, error: null }),
       signInWithOtp: async input => { calls.push(["otp", input]); return { error: null }; },
       verifyOtp: async input => { calls.push(["verify", input]); return { data: { user }, error: null }; },
@@ -93,4 +95,52 @@ test("maps service failures to generic auth errors", async () => {
   await assert.rejects(createAuthClient(unavailable).requestCode("person@example.com"), /couldn’t send a sign-in link/i);
   const invalid = { auth: { verifyOtp: async () => ({ data: null, error: new Error("invalid token") }) } };
   await assert.rejects(createAuthClient(invalid).verifyCode("person@example.com", "123456"), /invalid or has expired/i);
+});
+
+test("a cached user cannot unlock without server verification and allowlist approval", async () => {
+  const client = mockClient();
+  client.auth.getUser = async () => ({ error: new Error("revoked"), data: null });
+  assert.equal(await createAuthClient(client).session(), null);
+  client.auth.getUser = async () => ({ data: { user: client.user }, error: null });
+  client.rpc = async () => ({ data: false, error: null });
+  assert.equal(await createAuthClient(client).session(), null);
+  client.rpc = async () => { throw new Error("offline"); };
+  assert.equal(await createAuthClient(client).session(), null);
+});
+
+test("account changes during verification are rejected", async () => {
+  const client = mockClient();
+  client.auth.getSession = async () => ({ data: { session: { user: { id: "different-account" } } }, error: null });
+  assert.equal(await createAuthClient(client).session(), null);
+});
+
+test("a different account signing in triggers the same lock as remote sign-out", async () => {
+  const client = mockClient(); let locked = 0;
+  await createAuthClient(client).onSignedOut(() => { locked++; }, () => "user-1");
+  client.emitAuth("SIGNED_IN", { user: client.user }); assert.equal(locked, 0);
+  client.emitAuth("SIGNED_IN", { user: { id: "user-2" } }); assert.equal(locked, 1);
+});
+
+function gateFixture() {
+  const node = () => ({ hidden: false, inert: false, replaceChildren() {}, append() {}, setAttribute() {}, removeAttribute() {}, addEventListener() {}, focus() {}, classList: { add() {}, remove() {} } });
+  const root = node(), protectedNode = node();
+  return { root, protectedNode, documentRef: { querySelector: selector => selector === "#auth-root" ? root : null, querySelectorAll: () => [protectedNode], createElement: node, createTextNode: () => node() } };
+}
+
+test("protected routes remain hidden until account storage is ready", async () => {
+  const fixture = gateFixture(); let ready;
+  const gate = createAuthGate({ ...fixture, supabaseClient: mockClient(), beforeUnlock: () => new Promise(resolve => { ready = resolve; }) });
+  const started = gate.start();
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(fixture.protectedNode.hidden, true); assert.equal(fixture.protectedNode.inert, true);
+  ready(); await started;
+  assert.equal(fixture.protectedNode.hidden, false); gate.destroy();
+});
+
+test("a sign-out during account setup cannot reveal a stale protected route", async () => {
+  const fixture = gateFixture(); const client = mockClient(); let ready;
+  const gate = createAuthGate({ ...fixture, supabaseClient: client, beforeUnlock: () => new Promise(resolve => { ready = resolve; }) });
+  gate.start(); await new Promise(resolve => setImmediate(resolve));
+  client.emitAuth("SIGNED_OUT"); ready(); await new Promise(resolve => setImmediate(resolve));
+  assert.equal(fixture.protectedNode.hidden, true); assert.equal(gate.user, null); gate.destroy();
 });

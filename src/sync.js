@@ -1,4 +1,4 @@
-import { APP_ID, SCHEMA_VERSION, getDataChangeVersion, replaceAll, setMeta } from "./db.js";
+import { APP_ID, SCHEMA_VERSION, getDatabaseAccountId, getDataChangeVersion, replaceAll, setMeta } from "./db.js";
 import { buildBackup, validateBackup } from "./export.js";
 import { getSupabaseClient } from "./supabase-config.js";
 
@@ -193,6 +193,11 @@ export async function synchronizeNow() {
   const { data: authData, error: authError } = await client.auth.getSession();
   const userId = authData?.session?.user?.id;
   if (authError || !userId) throw new Error("Sign in before synchronizing.");
+  const checkAccount = async () => {
+    const current = await client.auth.getSession();
+    if (current.error || current.data?.session?.user?.id !== userId || getDatabaseAccountId() !== userId) throw new Error("Account changed. Synchronization stopped to protect your data.");
+  };
+  await checkAccount();
   const startingVersion = getDataChangeVersion();
   let local = await buildBackup();
   const localDeviceMeta = deviceMeta(local.meta);
@@ -203,7 +208,9 @@ export async function synchronizeNow() {
     const remote = await readRemote(client, userId);
     const snapshot = remote?.snapshot ? mergeBackups(remote.snapshot, local) : cloudBackupEnvelope(local);
     try {
+      await checkAccount();
       const saved = await writeRemote(client, userId, remote, snapshot);
+      await checkAccount();
       // A user action may complete while network requests are in flight. Never
       // replace those newer local edits with the earlier captured snapshot; the
       // queued follow-up sync will merge them into the new server revision.
